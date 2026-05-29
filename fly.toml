@@ -1,0 +1,12 @@
+app = "my-telegram-bot"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  USE_POLLING = "true"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
