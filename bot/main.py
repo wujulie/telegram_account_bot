@@ -2,6 +2,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from telegram import BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from .handlers import (
@@ -21,9 +22,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def post_init(app: Application) -> None:
+    await app.bot.set_my_commands([
+        BotCommand("start", "開始使用"),
+        BotCommand("help", "查看說明"),
+        BotCommand("add", "新增支出：/add 類別 金額 備註"),
+        BotCommand("income", "新增收入：/income 類別 金額"),
+        BotCommand("list", "查看最近記錄"),
+        BotCommand("report", "本月圓餅圖報表"),
+        BotCommand("note", "儲存備忘錄"),
+        BotCommand("newgroup", "建立共同帳本"),
+        BotCommand("join", "加入共同帳本"),
+        BotCommand("mygroups", "查看我的帳本"),
+        BotCommand("usegroup", "切換使用帳本"),
+        BotCommand("gadd", "新增群組支出"),
+        BotCommand("gpaid", "標記已付款"),
+        BotCommand("balance", "查看餘額"),
+        BotCommand("settle", "結算帳目"),
+    ])
+
+
 def build_app() -> Application:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
