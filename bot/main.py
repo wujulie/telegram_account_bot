@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 def main():
-    token = os.environ["TELEGRAM_TOKEN"]
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = Application.builder().token(token).build()
 
     add_conv = ConversationHandler(
