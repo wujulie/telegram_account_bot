@@ -1,91 +1,56 @@
-import logging
 import os
-
-from dotenv import load_dotenv
-from telegram import BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
-from .handlers import (
-    start, help_cmd, add_cmd, income_cmd,
-    report_cmd, list_cmd, note_cmd, message_handler,
+import logging
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    ConversationHandler, MessageHandler, filters,
 )
-from .handlers_groups import (
-    newgroup_cmd, join_cmd, mygroups_cmd, usegroup_cmd,
-    gadd_cmd, gpaid_cmd, balance_cmd, settle_cmd,
+from dotenv import load_dotenv
+from bot.handlers import (
+    start, reset,
+    add_expense_start, receive_payer, receive_amount,
+    receive_category, receive_category_custom, receive_splits, receive_confirm,
+    wiz_cancel,
+    settle_start, do_settle, settle_close,
+    records_show, records_close,
+    auto_register,
+    AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
 )
 
 load_dotenv()
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
-async def post_init(app: Application) -> None:
-    await app.bot.set_my_commands([
-        BotCommand("start", "開始使用"),
-        BotCommand("help", "查看說明"),
-        BotCommand("add", "新增支出：/add 類別 金額 備註"),
-        BotCommand("income", "新增收入：/income 類別 金額"),
-        BotCommand("list", "查看最近記錄"),
-        BotCommand("report", "本月圓餅圖報表"),
-        BotCommand("note", "儲存備忘錄"),
-        BotCommand("newgroup", "建立共同帳本"),
-        BotCommand("join", "加入共同帳本"),
-        BotCommand("mygroups", "查看我的帳本"),
-        BotCommand("usegroup", "切換使用帳本"),
-        BotCommand("gadd", "新增群組支出"),
-        BotCommand("gpaid", "標記已付款"),
-        BotCommand("balance", "查看餘額"),
-        BotCommand("settle", "結算帳目"),
-    ])
+def main():
+    token = os.environ["TELEGRAM_TOKEN"]
+    app = Application.builder().token(token).build()
 
-
-def build_app() -> Application:
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = Application.builder().token(token).post_init(post_init).build()
+    add_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(add_expense_start, pattern="^add_expense$")],
+        states={
+            AWAIT_PAYER: [CallbackQueryHandler(receive_payer, pattern="^(payer:|wiz_cancel)")],
+            AWAIT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_amount)],
+            AWAIT_CATEGORY: [CallbackQueryHandler(receive_category, pattern="^(cat:|wiz_cancel)")],
+            AWAIT_CATEGORY_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_category_custom)],
+            AWAIT_SPLITS: [CallbackQueryHandler(receive_splits, pattern="^(splits:|wiz_cancel)")],
+            AWAIT_CONFIRM: [CallbackQueryHandler(receive_confirm, pattern="^confirm:")],
+        },
+        fallbacks=[CallbackQueryHandler(wiz_cancel, pattern="^wiz_cancel$")],
+        per_message=False,
+    )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("add", add_cmd))
-    app.add_handler(CommandHandler("income", income_cmd))
-    app.add_handler(CommandHandler("report", report_cmd))
-    app.add_handler(CommandHandler("list", list_cmd))
-    app.add_handler(CommandHandler("note", note_cmd))
-
-    # 共同帳本
-    app.add_handler(CommandHandler("newgroup", newgroup_cmd))
-    app.add_handler(CommandHandler("join", join_cmd))
-    app.add_handler(CommandHandler("mygroups", mygroups_cmd))
-    app.add_handler(CommandHandler("usegroup", usegroup_cmd))
-    app.add_handler(CommandHandler("gadd", gadd_cmd))
-    app.add_handler(CommandHandler("gpaid", gpaid_cmd))
-    app.add_handler(CommandHandler("balance", balance_cmd))
-    app.add_handler(CommandHandler("settle", settle_cmd))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-
-    return app
-
-
-def main() -> None:
-    app = build_app()
-    use_polling = os.environ.get("USE_POLLING", "false").lower() == "true"
-
-    if use_polling:
-        logger.info("Starting bot in polling mode...")
-        app.run_polling()
-    else:
-        webhook_url = os.environ["WEBHOOK_URL"]
-        port = int(os.environ.get("PORT", 8080))
-        logger.info("Starting bot in webhook mode on port %d...", port)
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            webhook_url=f"{webhook_url}/webhook",
-            url_path="webhook",
-        )
+    app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(add_conv)
+    app.add_handler(CallbackQueryHandler(settle_start, pattern="^settle$"))
+    app.add_handler(CallbackQueryHandler(do_settle, pattern="^do_settle:"))
+    app.add_handler(CallbackQueryHandler(settle_close, pattern="^settle_close$"))
+    app.add_handler(CallbackQueryHandler(records_show, pattern=r"^records:\d+$"))
+    app.add_handler(CallbackQueryHandler(records_close, pattern="^records_close$"))
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & ~filters.COMMAND, auto_register),
+        group=1,
+    )
+    app.run_polling()
 
 
 if __name__ == "__main__":
