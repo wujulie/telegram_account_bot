@@ -1,195 +1,366 @@
-from datetime import date
-from telegram import Update
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest
 
-from . import db, nlp, charts
+import bot.db as db
+from bot.balance import calculate_net_balances
+from bot.dashboard import format_dashboard, dashboard_keyboard, refresh_dashboard
 
-CATEGORIES = ["飲食", "交通", "娛樂", "購物", "醫療", "居住", "薪資", "其他"]
+logger = logging.getLogger(__name__)
 
-HELP_TEXT = """🤖 *個人助理記帳機器人*
+# Conversation states for add-expense wizard
+AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(6)
 
-*自然語言（直接傳訊息）*
-• `吃飯 280` — 記支出
-• `買咖啡 120 星巴克` — 帶描述
-• `薪水入帳 50000` — 記收入
-• 傳長文/筆記 — 自動摘要儲存
+CATEGORIES = ["🍜 餐飲", "🛒 購物", "🏠 生活", "🚗 交通", "✏️ 其他"]
+END = -1
 
-*個人記帳*
-• `/add <類別> <金額> [描述]` — 新增支出
-• `/income <類別> <金額> [描述]` — 新增收入
-• `/report [YYYY-MM]` — 月度圓餅圖
-• `/list [筆數]` — 最近記錄（預設10筆）
-• `/note <文字>` — 儲存筆記
 
-*共同帳本*
-• `/newgroup <名稱>` — 建立帳本
-• `/join <邀請碼>` — 加入帳本
-• `/mygroups` — 查看我的帳本
-• `/usegroup <邀請碼>` — 切換帳本
-• `/gadd <金額> <描述>` — 我付錢（均分）
-• `/gpaid <名字> <金額> <描述>` — 指定付款人
-• `/balance` — 查看誰欠誰
-• `/settle <名字> <金額>` — 標記已結清
+def _compute_balances(group_id: str):
+    raw = db.get_raw_debts(group_id)
+    return calculate_net_balances(raw["splits"], raw["settlements"])
 
-• `/help` — 此說明
 
-*支出類別*：飲食 / 交通 / 娛樂 / 購物 / 醫療 / 居住 / 生活用品 / 其他"""
+async def _do_refresh(bot, group: dict) -> None:
+    members_list = db.get_members(group["id"])
+    balances = _compute_balances(group["id"])
+    recent = db.get_recent_expenses(group["id"], limit=5)
+    await refresh_dashboard(bot, group, members_list, balances, recent)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "嗨！我是你的個人助理 💼\n\n"
-        "直接傳訊息給我記帳，例如：`吃飯 280`\n"
-        "輸入 /help 查看所有功能",
-        parse_mode="Markdown",
-    )
+    chat = update.effective_chat
+    user = update.effective_user
 
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
-
-
-async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """用法：/add <類別> <金額> [描述]"""
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("用法：`/add <類別> <金額> [描述]`", parse_mode="Markdown")
+    if chat.type not in ("group", "supergroup"):
+        await update.message.reply_text("請在群組中使用 /start 來初始化帳目看板。")
         return
 
-    category = args[0]
+    group = db.get_or_create_group(chat.id, chat.title or "我的群組")
+    db.get_or_create_member(group["id"], user.id, user.first_name)
+
+    members_list = db.get_members(group["id"])
+    balances = _compute_balances(group["id"])
+    recent = db.get_recent_expenses(group["id"], limit=5)
+    members = {m["id"]: m for m in members_list}
+    text = format_dashboard(group["name"], members, balances, recent)
+
+    msg = await update.message.reply_text(text, reply_markup=dashboard_keyboard())
+
     try:
-        amount = float(args[1])
-    except ValueError:
-        await update.message.reply_text("金額格式錯誤，請輸入數字。")
+        await context.bot.pin_chat_message(chat_id=chat.id, message_id=msg.message_id, disable_notification=True)
+    except BadRequest as e:
+        logger.warning(f"Pin failed: {e}")
+        await update.message.reply_text("⚠️ 無法釘選訊息，請給我管理員（釘選訊息）權限，再傳一次 /start")
         return
 
-    description = " ".join(args[2:]) if len(args) > 2 else None
-    if category not in CATEGORIES:
-        category = "其他"
-
-    user_id = update.effective_user.id
-    db.add_transaction(user_id, "expense", amount, category, description)
-    await update.message.reply_text(
-        f"✅ 已記錄支出\n💸 {category}：${amount:,.0f}"
-        + (f"\n📝 {description}" if description else "")
-    )
+    db.set_dashboard_message(group["id"], chat.id, msg.message_id)
 
 
-async def income_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """用法：/income <類別> <金額> [描述]"""
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("用法：`/income <類別> <金額> [描述]`", parse_mode="Markdown")
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type not in ("group", "supergroup"):
         return
 
-    category = args[0]
+    member = await chat.get_member(user.id)
+    if member.status not in ("administrator", "creator"):
+        await update.message.reply_text("⚠️ 只有管理員可以重置帳目。")
+        return
+
+    group = db.get_or_create_group(chat.id, chat.title or "我的群組")
+    db.delete_group_data(group["id"])
+    await update.message.reply_text("✅ 帳目已清空。傳 /start 重新建立看板。")
+
+
+# ── Add Expense Wizard ────────────────────────────────────────────────────────
+
+async def add_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    chat = update.effective_chat
+    user = update.effective_user
+
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    db.get_or_create_member(group["id"], user.id, user.first_name)
+    members = db.get_members(group["id"])
+
+    context.user_data.update({"group": group, "members": members, "wizard_chat": chat.id})
+
+    buttons = [[InlineKeyboardButton(m["display_name"], callback_data=f"payer:{m['id']}")] for m in members]
+    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    msg = await query.message.reply_text("誰付錢？", reply_markup=InlineKeyboardMarkup(buttons))
+    context.user_data["wizard_msg_id"] = msg.message_id
+    return AWAIT_PAYER
+
+
+async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "wiz_cancel":
+        await query.message.delete()
+        return END
+
+    payer_id = query.data.split(":", 1)[1]
+    payer = next((m for m in context.user_data["members"] if m["id"] == payer_id), None)
+    if not payer:
+        return AWAIT_PAYER
+
+    context.user_data["payer"] = payer
+    await query.message.edit_text(f"付款人：{payer['display_name']}\n\n輸入金額（數字）：")
+    return AWAIT_AMOUNT
+
+
+async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
     try:
-        amount = float(args[1])
+        amount = float(text)
+        if amount <= 0:
+            raise ValueError
     except ValueError:
-        await update.message.reply_text("金額格式錯誤，請輸入數字。")
-        return
+        await update.message.reply_text("請輸入有效的正數金額：")
+        return AWAIT_AMOUNT
 
-    description = " ".join(args[2:]) if len(args) > 2 else None
-    user_id = update.effective_user.id
-    db.add_transaction(user_id, "income", amount, category, description)
-    await update.message.reply_text(
-        f"✅ 已記錄收入\n💰 {category}：${amount:,.0f}"
-        + (f"\n📝 {description}" if description else "")
+    context.user_data["amount"] = amount
+    await update.message.delete()
+
+    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
+    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    await context.bot.edit_message_text(
+        chat_id=update.effective_chat.id,
+        message_id=context.user_data["wizard_msg_id"],
+        text=f"付款人：{context.user_data['payer']['display_name']}\n金額：${amount:.0f}\n\n什麼用途？",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return AWAIT_CATEGORY
+
+
+async def receive_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "wiz_cancel":
+        await query.message.delete()
+        return END
+
+    cat = query.data.split(":", 1)[1]
+    if cat == "✏️ 其他":
+        await query.message.edit_text("輸入用途說明：")
+        return AWAIT_CATEGORY_CUSTOM
+
+    context.user_data["category"] = cat
+    return await _show_splits(query.message, context)
+
+
+async def receive_category_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["category"] = update.message.text.strip()
+    await update.message.delete()
+    await context.bot.edit_message_text(
+        chat_id=update.effective_chat.id,
+        message_id=context.user_data["wizard_msg_id"],
+        text=f"用途：{context.user_data['category']}\n\n分帳方式：",
+        reply_markup=_splits_markup(),
+    )
+    return AWAIT_SPLITS
+
+
+async def _show_splits(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    payer = context.user_data["payer"]
+    amount = context.user_data["amount"]
+    cat = context.user_data["category"]
+    await msg.edit_text(
+        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n用途：{cat}\n\n分帳方式：",
+        reply_markup=_splits_markup(),
+    )
+    return AWAIT_SPLITS
+
+
+def _splits_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ 全部人（平分）", callback_data="splits:all")],
+        [InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")],
+    ])
+
+
+async def receive_splits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "wiz_cancel":
+        await query.message.delete()
+        return END
+
+    members = context.user_data["members"]
+    payer = context.user_data["payer"]
+    amount = context.user_data["amount"]
+    cat = context.user_data["category"]
+
+    split_members = members  # v1: always split among all
+    n = len(split_members)
+    share = round(amount / n, 2)
+
+    split_lines = "  ".join([f"{m['display_name']} ${share:.0f}" for m in split_members])
+    summary = (
+        f"📝 確認支出\n\n"
+        f"付款：{payer['display_name']}\n"
+        f"金額：${amount:.0f}\n"
+        f"用途：{cat}\n"
+        f"平分：{split_lines}"
     )
 
-
-async def report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """用法：/report [YYYY-MM]"""
-    today = date.today()
-    year, month = today.year, today.month
-
-    if context.args:
-        try:
-            parts = context.args[0].split("-")
-            year, month = int(parts[0]), int(parts[1])
-        except (ValueError, IndexError):
-            await update.message.reply_text("格式錯誤，請用 `/report` 或 `/report 2026-04`", parse_mode="Markdown")
-            return
-
-    user_id = update.effective_user.id
-    expenses = db.get_monthly_expenses(user_id, year, month)
-
-    await update.message.reply_chat_action("upload_photo")
-    buf = charts.generate_pie_chart(expenses, year, month)
-    await update.message.reply_photo(photo=buf, caption=f"{year}年{month:02d}月 支出報表")
+    context.user_data.update({"split_members": split_members, "share": share})
+    buttons = [[
+        InlineKeyboardButton("✅ 確認", callback_data="confirm:yes"),
+        InlineKeyboardButton("❌ 取消", callback_data="confirm:no"),
+    ]]
+    await query.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(buttons))
+    return AWAIT_CONFIRM
 
 
-async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """用法：/list [筆數]"""
-    limit = 10
-    if context.args:
-        try:
-            limit = max(1, min(int(context.args[0]), 50))
-        except ValueError:
-            pass
+async def receive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
 
-    user_id = update.effective_user.id
-    rows = db.get_recent_transactions(user_id, limit)
+    if query.data == "confirm:no":
+        await query.message.delete()
+        return END
 
-    if not rows:
-        await update.message.reply_text("尚無記錄。")
+    group = context.user_data["group"]
+    payer = context.user_data["payer"]
+    amount = context.user_data["amount"]
+    cat = context.user_data["category"]
+    split_members = context.user_data["split_members"]
+    share = context.user_data["share"]
+
+    splits = [{"member_id": m["id"], "share_amount": share} for m in split_members]
+    db.add_expense(group["id"], payer["id"], amount, cat, None, splits)
+
+    await query.message.delete()
+    await _do_refresh(context.bot, group)
+    return END
+
+
+async def wiz_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+    return END
+
+
+# ── Settlement Flow ───────────────────────────────────────────────────────────
+
+async def settle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat = update.effective_chat
+    user = update.effective_user
+
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    db.get_or_create_member(group["id"], user.id, user.first_name)
+    members_list = db.get_members(group["id"])
+    members = {m["id"]: m for m in members_list}
+    balances = _compute_balances(group["id"])
+
+    if not balances:
+        await query.message.reply_text("✅ 大家都清了，沒有欠款！")
         return
 
-    lines = [f"📋 最近 {len(rows)} 筆記錄\n"]
-    for r in rows:
-        icon = "💸" if r["type"] == "expense" else "💰"
-        desc = f" {r['description']}" if r.get("description") else ""
-        lines.append(f"{icon} {r['date']}  {r['category']}  ${float(r['amount']):,.0f}{desc}")
+    context.user_data["settle_group"] = group
+    lines = ["目前欠款：\n"]
+    buttons = []
+    for b in balances:
+        from_name = members.get(b["from"], {}).get("display_name", b["from"])
+        to_name = members.get(b["to"], {}).get("display_name", b["to"])
+        lines.append(f"{from_name} → {to_name}  ${b['amount']:.0f}")
+        cb = f"do_settle:{b['from']}:{b['to']}:{b['amount']}"
+        buttons.append([InlineKeyboardButton(f"✅ {from_name}已還 {to_name} ${b['amount']:.0f}", callback_data=cb)])
 
-    await update.message.reply_text("\n".join(lines))
+    buttons.append([InlineKeyboardButton("❌ 關閉", callback_data="settle_close")])
+    await query.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons))
 
 
-async def note_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """用法：/note <文字>"""
-    if not context.args:
-        await update.message.reply_text("用法：`/note <要記錄的內容>`", parse_mode="Markdown")
+async def do_settle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    from_id, to_id, amount = parts[1], parts[2], float(parts[3])
+
+    group = context.user_data.get("settle_group")
+    if not group:
+        group = db.get_or_create_group(update.effective_chat.id, update.effective_chat.title or "群組")
+
+    db.add_settlement(group["id"], from_id, to_id, amount)
+    await query.message.delete()
+    await _do_refresh(context.bot, group)
+
+
+async def settle_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
+
+
+# ── Records ───────────────────────────────────────────────────────────────────
+
+PAGE = 10
+
+
+async def records_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat = update.effective_chat
+
+    offset = int(query.data.split(":", 1)[1])
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    expenses = db.get_all_expenses(group["id"], offset=offset, limit=PAGE + 1)
+
+    has_next = len(expenses) > PAGE
+    page = expenses[:PAGE]
+
+    if not page:
+        await query.message.reply_text("沒有支出記錄。")
         return
 
-    text = " ".join(context.args)
-    user_id = update.effective_user.id
-    summary = await nlp.summarize_note(text)
-    db.add_note(user_id, text, summary)
-    await update.message.reply_text(f"📝 筆記已儲存\n\n摘要：{summary}")
+    page_num = offset // PAGE + 1
+    lines = [f"📋 全部支出（第{page_num}頁）\n"]
+    for e in page:
+        payer = (e.get("members") or {}).get("display_name", "?")
+        label = e.get("description") or e.get("category", "")
+        date_str = _fmt_rec_date(e["created_at"])
+        lines.append(f"{date_str}  {label}  ${float(e['amount']):.0f}  {payer}付")
+
+    nav = []
+    if offset > 0:
+        nav.append(InlineKeyboardButton("← 上頁", callback_data=f"records:{offset - PAGE}"))
+    if has_next:
+        nav.append(InlineKeyboardButton("下頁 →", callback_data=f"records:{offset + PAGE}"))
+    nav.append(InlineKeyboardButton("❌ 關閉", callback_data="records_close"))
+
+    await query.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([nav]))
 
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """處理所有非指令訊息，用 Claude 判斷意圖。"""
-    text = update.message.text
-    user_id = update.effective_user.id
+async def records_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
 
-    parsed = await nlp.parse_message(text)
-    intent = parsed.get("intent", "unknown")
-    amount = parsed.get("amount")
-    category = parsed.get("category") or "其他"
-    description = parsed.get("description")
 
-    if intent == "expense" and amount:
-        db.add_transaction(user_id, "expense", float(amount), category, description)
-        await update.message.reply_text(
-            f"✅ 支出記錄\n💸 {category}：${float(amount):,.0f}"
-            + (f"\n📝 {description}" if description else "")
-        )
+def _fmt_rec_date(iso_str: str) -> str:
+    from datetime import datetime, timezone
+    try:
+        return datetime.fromisoformat(iso_str.replace("Z", "+00:00")).strftime("%m/%d")
+    except Exception:
+        return "?"
 
-    elif intent == "income" and amount:
-        db.add_transaction(user_id, "income", float(amount), category, description)
-        await update.message.reply_text(
-            f"✅ 收入記錄\n💰 {category}：${float(amount):,.0f}"
-            + (f"\n📝 {description}" if description else "")
-        )
 
-    elif intent == "note" or (intent == "unknown" and len(text) > 30):
-        summary = await nlp.summarize_note(text)
-        db.add_note(user_id, text, summary)
-        await update.message.reply_text(f"📝 筆記已儲存\n\n摘要：{summary}")
+# ── Auto-register ─────────────────────────────────────────────────────────────
 
-    else:
-        await update.message.reply_text(
-            "沒看懂 😅\n\n"
-            "試試：`吃飯 280` 或 `/help`",
-            parse_mode="Markdown",
-        )
+async def auto_register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    if not user or chat.type not in ("group", "supergroup"):
+        return
+    try:
+        group = db.get_or_create_group(chat.id, chat.title or "群組")
+        db.get_or_create_member(group["id"], user.id, user.first_name)
+    except Exception as e:
+        logger.warning(f"auto_register error: {e}")
