@@ -12,6 +12,7 @@ from bot.handlers import (
     wiz_cancel,
     settle_start, do_settle, settle_close,
     records_show, records_close, expense_delete, settlement_delete,
+    balance_detail, balance_detail_close,
     auto_register,
     AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
 )
@@ -56,6 +57,8 @@ def main():
     app.add_handler(CallbackQueryHandler(records_close, pattern="^records_close$"))
     app.add_handler(CallbackQueryHandler(expense_delete, pattern=r"^del_expense:"))
     app.add_handler(CallbackQueryHandler(settlement_delete, pattern=r"^del_settle:"))
+    app.add_handler(CallbackQueryHandler(balance_detail, pattern="^balance_detail$"))
+    app.add_handler(CallbackQueryHandler(balance_detail_close, pattern="^balance_detail_close$"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(debug_cb))  # catch-all
     app.add_handler(

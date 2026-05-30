@@ -60,7 +60,13 @@ def add_expense(
     }
     if expense_date:
         row["expense_date"] = expense_date
-    expense = supabase.table("expenses").insert(row).execute().data[0]
+    try:
+        expense = supabase.table("expenses").insert(row).execute().data[0]
+    except Exception:
+        # expense_date column not yet in schema cache, fall back
+        row.pop("expense_date", None)
+        row["description"] = expense_date  # store date in description as fallback
+        expense = supabase.table("expenses").insert(row).execute().data[0]
     split_rows = [{"expense_id": expense["id"], **s} for s in splits]
     if split_rows:
         supabase.table("expense_splits").insert(split_rows).execute()
@@ -74,6 +80,15 @@ def get_recent_expenses(group_id: str, limit: int = 5) -> list[dict]:
         .eq("group_id", group_id)
         .order("created_at", desc=True)
         .limit(limit)
+        .execute().data
+    )
+
+
+def get_all_expenses_raw(group_id: str) -> list[dict]:
+    return (
+        supabase.table("expenses")
+        .select("paid_by_member_id, amount")
+        .eq("group_id", group_id)
         .execute().data
     )
 

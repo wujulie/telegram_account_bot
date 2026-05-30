@@ -25,7 +25,7 @@ def format_dashboard(
             payer = (e.get("members") or {}).get("display_name", "?")
             label = e.get("category", "")
             amount = float(e["amount"])
-            date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_date(e["created_at"])
+            date_str = e["expense_date"][5:] if e.get("expense_date") else (e.get("description") or _fmt_date(e["created_at"]))
             lines.append(f"  {date_str}  {label} ${amount:.0f}  {payer}付")
     else:
         lines.append("  （無記錄）")
@@ -34,11 +34,16 @@ def format_dashboard(
 
 
 def dashboard_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("➕ 加支出", callback_data="add_expense"),
-        InlineKeyboardButton("💸 還錢", callback_data="settle"),
-        InlineKeyboardButton("📋 全部", callback_data="records:0"),
-    ]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ 加支出", callback_data="add_expense"),
+            InlineKeyboardButton("💸 還錢", callback_data="settle"),
+            InlineKeyboardButton("📋 全部", callback_data="records:0"),
+        ],
+        [
+            InlineKeyboardButton("📊 結餘明細", callback_data="balance_detail"),
+        ],
+    ])
 
 
 async def refresh_dashboard(bot, group: dict, members_list: list[dict], balances: list[dict], recent: list[dict]) -> None:

@@ -241,7 +241,7 @@ async def receive_category_custom(update: Update, context: ContextTypes.DEFAULT_
     await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
         message_id=context.user_data["wizard_msg_id"],
-        text=f"用途：{context.user_data['category']}\n\n要分帳嗎？",
+        text=f"用途：{context.user_data['category']}\n\n選分帳方式：\n✅ 平分 → 兩人均攤\n💳 全額代墊 → 我幫你付，你欠我全額\n🚫 不計帳 → 純記錄，不產生欠款",
         reply_markup=_splits_markup(),
     )
     return AWAIT_SPLITS
@@ -252,7 +252,7 @@ async def _show_splits(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
     amount = context.user_data["amount"]
     cat = context.user_data["category"]
     await msg.edit_text(
-        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n用途：{cat}\n\n要分帳嗎？",
+        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n用途：{cat}\n\n選分帳方式：\n✅ 平分 → 兩人均攤\n💳 全額代墊 → 我幫你付，你欠我全額\n🚫 不計帳 → 純記錄，不產生欠款",
         reply_markup=_splits_markup(),
     )
     return AWAIT_SPLITS
@@ -514,6 +514,66 @@ async def settlement_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     group = db.get_or_create_group(chat.id, chat.title or "群組")
     await _do_refresh(context.bot, group)
     await _send_records(query.message, group, offset)
+
+
+async def balance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    chat = update.effective_chat
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    members_list = db.get_members(group["id"])
+    members = {m["id"]: m for m in members_list}
+
+    # 每人付出總額
+    expenses = db.get_all_expenses_raw(group["id"])
+    paid: dict[str, float] = {}
+    for e in expenses:
+        mid = e["paid_by_member_id"]
+        paid[mid] = paid.get(mid, 0) + float(e["amount"])
+
+    # 每人應付份額
+    raw = db.get_raw_debts(group["id"])
+    owed_share: dict[str, float] = {}
+    for s in raw["splits"]:
+        mid = s["member_id"]
+        owed_share[mid] = owed_share.get(mid, 0) + float(s["share_amount"])
+
+    # 結餘 = 付出 - 應付（正 = 別人欠你，負 = 你欠別人）
+    all_ids = set(list(paid.keys()) + list(owed_share.keys()) + [m["id"] for m in members_list])
+    lines = ["📊 結餘明細", "━━━━━━━━━━━━━━━"]
+    for mid in all_ids:
+        name = members.get(mid, {}).get("display_name", "?")
+        p = paid.get(mid, 0)
+        s = owed_share.get(mid, 0)
+        net = p - s
+        if net > 0.005:
+            tag = f"＋${net:.0f}（別人欠你）"
+        elif net < -0.005:
+            tag = f"－${abs(net):.0f}（你欠別人）"
+        else:
+            tag = "✅ 清"
+        lines.append(f"  {name}  付${p:.0f} / 應付${s:.0f}  {tag}")
+
+    balances = _compute_balances(group["id"])
+    lines.append("━━━━━━━━━━━━━━━")
+    if balances:
+        for b in balances:
+            fn = members.get(b["from"], {}).get("display_name", "?")
+            tn = members.get(b["to"], {}).get("display_name", "?")
+            lines.append(f"  {fn} → {tn}  ${b['amount']:.0f}")
+    else:
+        lines.append("  ✅ 大家都清了")
+
+    await query.message.reply_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 關閉", callback_data="balance_detail_close")]]),
+    )
+
+
+async def balance_detail_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await query.message.delete()
 
 
 def _fmt_rec_date(iso_str: str) -> str:
