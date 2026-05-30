@@ -158,7 +158,7 @@ async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         payer = context.user_data["payer"]
         amount = context.user_data["amount"]
         await query.message.edit_text(
-            f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n\n輸入日期（格式：5/15 或 2026-05-15）："
+            f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n\n輸入日期（格式：5/15 或 2026/5/15）："
         )
         return AWAIT_DATE_CUSTOM
 
@@ -179,13 +179,14 @@ async def receive_date_custom(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.delete()
     try:
         today = date.today()
-        # 支援 "5/15", "05/15", "2026-05-15"
-        if "-" in text and len(text) >= 8:
-            parsed = date.fromisoformat(text)
-        elif "/" in text:
+        # 支援 "5/15", "05/15", "2026/05/15", "2026/5/15"
+        if "/" in text:
             parts = text.split("/")
-            month, day = int(parts[0]), int(parts[1])
-            year = today.year if month <= today.month else today.year - 1
+            if len(parts) == 3:
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+            else:
+                month, day = int(parts[0]), int(parts[1])
+                year = today.year if month <= today.month else today.year - 1
             parsed = date(year, month, day)
         else:
             raise ValueError
@@ -193,7 +194,7 @@ async def receive_date_custom(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
             message_id=context.user_data["wizard_msg_id"],
-            text="格式錯誤，請輸入如 5/15 或 2026-05-15："
+            text="格式錯誤，請輸入如 5/15 或 2026/5/15："
         )
         return AWAIT_DATE_CUSTOM
 
