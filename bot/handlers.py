@@ -357,7 +357,7 @@ def _fmt_rec_date(iso_str: str) -> str:
 async def auto_register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
     user = update.effective_user
-    if not user or chat.type not in ("group", "supergroup"):
+    if not user or user.is_bot or chat.type not in ("group", "supergroup"):
         return
     try:
         group = db.get_or_create_group(chat.id, chat.title or "群組")
