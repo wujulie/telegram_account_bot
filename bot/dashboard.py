@@ -23,9 +23,9 @@ def format_dashboard(
     if recent_expenses:
         for e in recent_expenses:
             payer = (e.get("members") or {}).get("display_name", "?")
-            label = e.get("description") or e.get("category", "")
+            label = e.get("category", "")
             amount = float(e["amount"])
-            date_str = _fmt_date(e["created_at"])
+            date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_date(e["created_at"])
             lines.append(f"  {date_str}  {label} ${amount:.0f}  {payer}付")
     else:
         lines.append("  （無記錄）")

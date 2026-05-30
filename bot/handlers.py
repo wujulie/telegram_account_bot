@@ -1,4 +1,5 @@
 import logging
+from datetime import date, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
@@ -10,7 +11,7 @@ from bot.dashboard import format_dashboard, dashboard_keyboard, refresh_dashboar
 logger = logging.getLogger(__name__)
 
 # Conversation states for add-expense wizard
-AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(6)
+AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(7)
 
 CATEGORIES = ["🍜 餐飲", "🛒 購物", "🏠 生活", "🚗 交通", "✏️ 其他"]
 END = -1
@@ -124,12 +125,40 @@ async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["amount"] = amount
     await update.message.delete()
 
-    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
-    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    buttons = [
+        [
+            InlineKeyboardButton(f"今天 {today.strftime('%m/%d')}", callback_data=f"date:{today.isoformat()}"),
+            InlineKeyboardButton(f"昨天 {yesterday.strftime('%m/%d')}", callback_data=f"date:{yesterday.isoformat()}"),
+        ],
+        [InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")],
+    ]
     await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
         message_id=context.user_data["wizard_msg_id"],
-        text=f"付款人：{context.user_data['payer']['display_name']}\n金額：${amount:.0f}\n\n什麼用途？",
+        text=f"付款人：{context.user_data['payer']['display_name']}\n金額：${amount:.0f}\n\n消費日期？",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return AWAIT_DATE
+
+
+async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == "wiz_cancel":
+        await query.message.delete()
+        return END
+
+    selected_date = query.data.split(":", 1)[1]  # e.g. "2026-05-30"
+    context.user_data["expense_date"] = selected_date
+
+    payer = context.user_data["payer"]
+    amount = context.user_data["amount"]
+    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
+    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    await query.message.edit_text(
+        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n日期：{selected_date[5:]}\n\n什麼用途？",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
     return AWAIT_CATEGORY
@@ -264,8 +293,9 @@ async def receive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     split_members = context.user_data["split_members"]
     share = context.user_data["share"]
 
+    expense_date = context.user_data.get("expense_date")
     splits = [{"member_id": m["id"], "share_amount": share} for m in split_members]
-    db.add_expense(group["id"], payer["id"], amount, cat, None, splits)
+    db.add_expense(group["id"], payer["id"], amount, cat, expense_date, splits)
 
     await query.message.delete()
     await _do_refresh(context.bot, group)
@@ -341,24 +371,26 @@ async def records_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     query = update.callback_query
     await query.answer()
     chat = update.effective_chat
-
     offset = int(query.data.split(":", 1)[1])
     group = db.get_or_create_group(chat.id, chat.title or "群組")
-    expenses = db.get_all_expenses(group["id"], offset=offset, limit=PAGE + 1)
+    await _send_records(query.message, group, offset)
 
+
+async def _send_records(message, group: dict, offset: int) -> None:
+    expenses = db.get_all_expenses(group["id"], offset=offset, limit=PAGE + 1)
     has_next = len(expenses) > PAGE
     page = expenses[:PAGE]
 
     if not page:
-        await query.message.reply_text("沒有支出記錄。")
+        await message.reply_text("沒有支出記錄。")
         return
 
     page_num = offset // PAGE + 1
     rows = []
     for e in page:
         payer = (e.get("members") or {}).get("display_name", "?")
-        label = e.get("description") or e.get("category", "")
-        date_str = _fmt_rec_date(e["created_at"])
+        label = e.get("category", "")
+        date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_rec_date(e["created_at"])
         btn_label = f"🗑 {date_str} {label} ${float(e['amount']):.0f} {payer}付"
         rows.append([InlineKeyboardButton(btn_label, callback_data=f"del_expense:{e['id']}:{offset}")])
 
@@ -371,7 +403,7 @@ async def records_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     rows.append(nav)
 
     header = f"📋 全部支出（第{page_num}頁）\n點按鈕可刪除該筆記錄"
-    await query.message.reply_text(header, reply_markup=InlineKeyboardMarkup(rows))
+    await message.reply_text(header, reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def records_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -386,9 +418,9 @@ async def expense_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     parts = query.data.split(":")
     expense_id, offset = parts[1], int(parts[2])
     db.delete_expense(expense_id)
-    # 重新顯示同一頁
-    query.data = f"records:{offset}"
-    await records_show(update, context)
+    chat = update.effective_chat
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    await _send_records(query.message, group, offset)
 
 
 def _fmt_rec_date(iso_str: str) -> str:

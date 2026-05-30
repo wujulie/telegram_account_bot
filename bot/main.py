@@ -7,13 +7,13 @@ from telegram.ext import (
 from dotenv import load_dotenv
 from bot.handlers import (
     start, reset,
-    add_expense_start, receive_payer, receive_amount,
+    add_expense_start, receive_payer, receive_amount, receive_date,
     receive_category, receive_category_custom, receive_splits, receive_confirm,
     wiz_cancel,
     settle_start, do_settle, settle_close,
     records_show, records_close, expense_delete,
     auto_register,
-    AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
+    AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
 )
 
 load_dotenv()
@@ -29,6 +29,7 @@ def main():
         states={
             AWAIT_PAYER: [CallbackQueryHandler(receive_payer, pattern="^(payer:|wiz_cancel)")],
             AWAIT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_amount)],
+            AWAIT_DATE: [CallbackQueryHandler(receive_date, pattern="^(date:|wiz_cancel)")],
             AWAIT_CATEGORY: [CallbackQueryHandler(receive_category, pattern="^(cat:|wiz_cancel)")],
             AWAIT_CATEGORY_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_category_custom)],
             AWAIT_SPLITS: [CallbackQueryHandler(receive_splits, pattern="^(splits:|wiz_cancel)")],

@@ -49,16 +49,18 @@ def add_expense(
     paid_by_member_id: str,
     amount: float,
     category: str,
-    description: str | None,
+    expense_date: str | None,
     splits: list[dict],
 ) -> dict:
-    expense = supabase.table("expenses").insert({
+    row = {
         "group_id": group_id,
         "paid_by_member_id": paid_by_member_id,
         "amount": amount,
         "category": category,
-        "description": description,
-    }).execute().data[0]
+    }
+    if expense_date:
+        row["expense_date"] = expense_date
+    expense = supabase.table("expenses").insert(row).execute().data[0]
     split_rows = [{"expense_id": expense["id"], **s} for s in splits]
     if split_rows:
         supabase.table("expense_splits").insert(split_rows).execute()
