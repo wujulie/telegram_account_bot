@@ -11,7 +11,7 @@ from bot.dashboard import format_dashboard, dashboard_keyboard, refresh_dashboar
 logger = logging.getLogger(__name__)
 
 # Conversation states for add-expense wizard
-AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(7)
+AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(8)
 
 CATEGORIES = ["🍜 餐飲", "🛒 購物", "🏠 生活", "🚗 交通", "✏️ 其他"]
 END = -1
@@ -134,6 +134,7 @@ async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             .replace("Fri","五").replace("Sat","六").replace("Sun","日"))
         day_buttons.append(InlineKeyboardButton(label, callback_data=f"date:{d.isoformat()}"))
     rows = [day_buttons[i:i+4] for i in range(0, len(day_buttons), 4)]
+    rows.append([InlineKeyboardButton("📅 其他日期（自行輸入）", callback_data="date:custom")])
     rows.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
     await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
@@ -151,15 +152,60 @@ async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.message.delete()
         return END
 
-    selected_date = query.data.split(":", 1)[1]  # e.g. "2026-05-30"
-    context.user_data["expense_date"] = selected_date
+    selected_date = query.data.split(":", 1)[1]  # e.g. "2026-05-30" or "custom"
 
+    if selected_date == "custom":
+        payer = context.user_data["payer"]
+        amount = context.user_data["amount"]
+        await query.message.edit_text(
+            f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n\n輸入日期（格式：5/15 或 2026-05-15）："
+        )
+        return AWAIT_DATE_CUSTOM
+
+    context.user_data["expense_date"] = selected_date
     payer = context.user_data["payer"]
     amount = context.user_data["amount"]
     buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
     buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
     await query.message.edit_text(
         f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n日期：{selected_date[5:]}\n\n什麼用途？",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+    return AWAIT_CATEGORY
+
+
+async def receive_date_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    await update.message.delete()
+    try:
+        today = date.today()
+        # 支援 "5/15", "05/15", "2026-05-15"
+        if "-" in text and len(text) >= 8:
+            parsed = date.fromisoformat(text)
+        elif "/" in text:
+            parts = text.split("/")
+            month, day = int(parts[0]), int(parts[1])
+            year = today.year if month <= today.month else today.year - 1
+            parsed = date(year, month, day)
+        else:
+            raise ValueError
+    except (ValueError, IndexError):
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=context.user_data["wizard_msg_id"],
+            text="格式錯誤，請輸入如 5/15 或 2026-05-15："
+        )
+        return AWAIT_DATE_CUSTOM
+
+    context.user_data["expense_date"] = parsed.isoformat()
+    payer = context.user_data["payer"]
+    amount = context.user_data["amount"]
+    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
+    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    await context.bot.edit_message_text(
+        chat_id=update.effective_chat.id,
+        message_id=context.user_data["wizard_msg_id"],
+        text=f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n日期：{parsed.strftime('%m/%d')}\n\n什麼用途？",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
     return AWAIT_CATEGORY
