@@ -60,7 +60,8 @@ def add_expense(
         "description": description,
     }).execute().data[0]
     split_rows = [{"expense_id": expense["id"], **s} for s in splits]
-    supabase.table("expense_splits").insert(split_rows).execute()
+    if split_rows:
+        supabase.table("expense_splits").insert(split_rows).execute()
     return expense
 
 
@@ -104,6 +105,11 @@ def get_raw_debts(group_id: str) -> dict:
     )
     settlements = supabase.table("settlements").select("*").eq("group_id", group_id).execute().data
     return {"splits": splits, "settlements": settlements}
+
+
+def delete_expense(expense_id: str) -> None:
+    supabase.table("expense_splits").delete().eq("expense_id", expense_id).execute()
+    supabase.table("expenses").delete().eq("id", expense_id).execute()
 
 
 def delete_group_data(group_id: str) -> None:

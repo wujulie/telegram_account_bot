@@ -44,10 +44,10 @@ def dashboard_keyboard() -> InlineKeyboardMarkup:
 async def refresh_dashboard(bot, group: dict, members_list: list[dict], balances: list[dict], recent: list[dict]) -> None:
     import bot.db as db
     dm = db.get_dashboard_message(group["id"])
-    if not dm:
-        return
     members = {m["id"]: m for m in members_list}
     text = format_dashboard(group["name"], members, balances, recent)
+    if not dm:
+        return
     try:
         await bot.edit_message_text(
             chat_id=dm["chat_id"],
@@ -56,7 +56,13 @@ async def refresh_dashboard(bot, group: dict, members_list: list[dict], balances
             reply_markup=dashboard_keyboard(),
         )
     except Exception:
-        pass
+        # 舊訊息被刪或無法編輯，發新的
+        msg = await bot.send_message(
+            chat_id=dm["chat_id"],
+            text=text,
+            reply_markup=dashboard_keyboard(),
+        )
+        db.set_dashboard_message(group["id"], dm["chat_id"], msg.message_id)
 
 
 def _fmt_date(iso_str: str) -> str:
