@@ -126,19 +126,20 @@ async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.delete()
 
     today = date.today()
-    yesterday = today - timedelta(days=1)
-    buttons = [
-        [
-            InlineKeyboardButton(f"今天 {today.strftime('%m/%d')}", callback_data=f"date:{today.isoformat()}"),
-            InlineKeyboardButton(f"昨天 {yesterday.strftime('%m/%d')}", callback_data=f"date:{yesterday.isoformat()}"),
-        ],
-        [InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")],
-    ]
+    day_buttons = []
+    for i in range(7):
+        d = today - timedelta(days=i)
+        label = ("今天" if i == 0 else "昨天" if i == 1 else d.strftime("%m/%d %a").replace(
+            "Mon","一").replace("Tue","二").replace("Wed","三").replace("Thu","四")
+            .replace("Fri","五").replace("Sat","六").replace("Sun","日"))
+        day_buttons.append(InlineKeyboardButton(label, callback_data=f"date:{d.isoformat()}"))
+    rows = [day_buttons[i:i+4] for i in range(0, len(day_buttons), 4)]
+    rows.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
     await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
         message_id=context.user_data["wizard_msg_id"],
         text=f"付款人：{context.user_data['payer']['display_name']}\n金額：${amount:.0f}\n\n消費日期？",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        reply_markup=InlineKeyboardMarkup(rows),
     )
     return AWAIT_DATE
 
