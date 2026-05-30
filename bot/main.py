@@ -57,7 +57,7 @@ def main():
     app.add_handler(CallbackQueryHandler(records_close, pattern="^records_close$"))
     app.add_handler(CallbackQueryHandler(expense_delete, pattern=r"^del_expense:"))
     app.add_handler(CallbackQueryHandler(settlement_delete, pattern=r"^del_settle:"))
-    app.add_handler(CallbackQueryHandler(balance_detail, pattern="^balance_detail$"))
+    app.add_handler(CallbackQueryHandler(balance_detail, pattern=r"^balance_detail(:[^_].*)?$"))
     app.add_handler(CallbackQueryHandler(balance_detail_close, pattern="^balance_detail_close$"))
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(debug_cb))  # catch-all

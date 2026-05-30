@@ -526,6 +526,7 @@ async def settlement_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def balance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from datetime import date as _date
     query = update.callback_query
     await query.answer()
     chat = update.effective_chat
@@ -533,23 +534,36 @@ async def balance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     members_list = db.get_members(group["id"])
     members = {m["id"]: m for m in members_list}
 
-    # 每人付出總額
-    expenses = db.get_all_expenses_raw(group["id"])
+    # 解析月份參數：balance_detail 或 balance_detail:2026-05 或 balance_detail:all
+    parts = query.data.split(":")
+    month_key = parts[1] if len(parts) > 1 else None  # e.g. "2026-05" or "all" or None
+
+    today = _date.today()
+    if month_key and month_key != "all":
+        year, month = int(month_key.split("-")[0]), int(month_key.split("-")[1])
+        title_tag = f"{year}/{month}月"
+        expenses = db.get_all_expenses_raw_by_month(group["id"], year, month)
+        raw = db.get_raw_debts_by_month(group["id"], year, month)
+        from bot.balance import calculate_net_balances
+        balances = calculate_net_balances(raw["splits"], raw["settlements"])
+    else:
+        title_tag = "全部"
+        expenses = db.get_all_expenses_raw(group["id"])
+        raw = db.get_raw_debts(group["id"])
+        balances = _compute_balances(group["id"])
+
     paid: dict[str, float] = {}
     for e in expenses:
         mid = e["paid_by_member_id"]
         paid[mid] = paid.get(mid, 0) + float(e["amount"])
 
-    # 每人應付份額
-    raw = db.get_raw_debts(group["id"])
     owed_share: dict[str, float] = {}
     for s in raw["splits"]:
         mid = s["member_id"]
         owed_share[mid] = owed_share.get(mid, 0) + float(s["share_amount"])
 
-    # 結餘 = 付出 - 應付（正 = 別人欠你，負 = 你欠別人）
     all_ids = set(list(paid.keys()) + list(owed_share.keys()) + [m["id"] for m in members_list])
-    lines = ["📊 結餘明細", "━━━━━━━━━━━━━━━"]
+    lines = [f"📊 結餘明細（{title_tag}）", "━━━━━━━━━━━━━━━"]
     for mid in all_ids:
         name = members.get(mid, {}).get("display_name", "?")
         p = paid.get(mid, 0)
@@ -563,7 +577,6 @@ async def balance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             tag = "✅ 清"
         lines.append(f"  {name}  付${p:.0f} / 應付${s:.0f}  {tag}")
 
-    balances = _compute_balances(group["id"])
     lines.append("━━━━━━━━━━━━━━━")
     if balances:
         for b in balances:
@@ -573,9 +586,23 @@ async def balance_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         lines.append("  ✅ 大家都清了")
 
-    await query.message.reply_text(
+    # 月份切換按鈕：本月、上月、上上月、全部
+    import calendar
+    month_btns = []
+    for i in range(3):
+        y = today.year if today.month - i > 0 else today.year - 1
+        m = (today.month - i - 1) % 12 + 1
+        key = f"{y}-{m:02d}"
+        label = "本月" if i == 0 else ("上月" if i == 1 else f"{m}月")
+        month_btns.append(InlineKeyboardButton(label, callback_data=f"balance_detail:{key}"))
+    month_btns.append(InlineKeyboardButton("全部", callback_data="balance_detail:all"))
+
+    await query.message.edit_text(
         "\n".join(lines),
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ 關閉", callback_data="balance_detail_close")]]),
+        reply_markup=InlineKeyboardMarkup([
+            month_btns,
+            [InlineKeyboardButton("❌ 關閉", callback_data="balance_detail_close")],
+        ]),
     )
 
 

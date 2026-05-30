@@ -127,6 +127,61 @@ def delete_settlement(settlement_id: str) -> None:
     supabase.table("settlements").delete().eq("id", settlement_id).execute()
 
 
+def get_raw_debts_by_month(group_id: str, year: int, month: int) -> dict:
+    import calendar
+    from datetime import date
+    start = date(year, month, 1).isoformat()
+    _, last_day = calendar.monthrange(year, month)
+    end = date(year, month, last_day).isoformat()
+
+    expenses = (
+        supabase.table("expenses")
+        .select("id, paid_by_member_id")
+        .eq("group_id", group_id)
+        .gte("expense_date", start)
+        .lte("expense_date", end)
+        .execute().data
+    )
+    expense_map = {e["id"]: e["paid_by_member_id"] for e in expenses}
+    splits = []
+    if expense_map:
+        raw = (
+            supabase.table("expense_splits")
+            .select("expense_id, member_id, share_amount")
+            .in_("expense_id", list(expense_map.keys()))
+            .execute().data
+        )
+        splits = [
+            {"member_id": s["member_id"], "share_amount": s["share_amount"],
+             "expenses": {"paid_by_member_id": expense_map[s["expense_id"]]}}
+            for s in raw
+        ]
+    settlements = (
+        supabase.table("settlements").select("*")
+        .eq("group_id", group_id)
+        .gte("created_at", f"{start}T00:00:00")
+        .lte("created_at", f"{end}T23:59:59")
+        .execute().data
+    )
+    return {"splits": splits, "settlements": settlements}
+
+
+def get_all_expenses_raw_by_month(group_id: str, year: int, month: int) -> list[dict]:
+    import calendar
+    from datetime import date
+    start = date(year, month, 1).isoformat()
+    _, last_day = calendar.monthrange(year, month)
+    end = date(year, month, last_day).isoformat()
+    return (
+        supabase.table("expenses")
+        .select("paid_by_member_id, amount")
+        .eq("group_id", group_id)
+        .gte("expense_date", start)
+        .lte("expense_date", end)
+        .execute().data
+    )
+
+
 def get_raw_debts(group_id: str) -> dict:
     splits = (
         supabase.table("expense_splits")
