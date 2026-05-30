@@ -114,12 +114,21 @@ async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     try:
-        parts = text.split()
-        amount = sum(float(p) for p in parts)
+        # 支援四則運算（如 100*2、300/3、50+30-10）及空格加總（如 50 50）
+        import re
+        expr = text.replace("，", ",").replace("x", "*").replace("×", "*").replace("÷", "/")
+        if re.fullmatch(r"[\d\s\.\+\-\*\/\(\)]+", expr):
+            # 空格分隔純數字 → 加總
+            if re.fullmatch(r"[\d\s\.]+", expr):
+                amount = sum(float(p) for p in expr.split())
+            else:
+                amount = float(eval(expr))  # noqa: S307
+        else:
+            raise ValueError
         if amount <= 0:
             raise ValueError
-    except ValueError:
-        await update.message.reply_text("請輸入金額（可輸入多個數字自動加總，例如：50 50）：")
+    except Exception:
+        await update.message.reply_text("請輸入金額，支援：\n・空格加總：50 50\n・四則運算：100*2、300/3、50+30")
         return AWAIT_AMOUNT
 
     context.user_data["amount"] = amount
