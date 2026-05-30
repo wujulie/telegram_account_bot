@@ -11,9 +11,8 @@ from bot.dashboard import format_dashboard, dashboard_keyboard, refresh_dashboar
 logger = logging.getLogger(__name__)
 
 # Conversation states for add-expense wizard
-AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(8)
+AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(6)
 
-CATEGORIES = ["🍜 餐飲", "🛒 購物", "🏠 生活", "🚗 交通", "✏️ 其他"]
 END = -1
 
 
@@ -107,33 +106,35 @@ async def receive_payer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return AWAIT_PAYER
 
     context.user_data["payer"] = payer
-    await query.message.edit_text(f"付款人：{payer['display_name']}\n\n輸入金額（數字）：")
-    return AWAIT_AMOUNT
+    await query.message.edit_text(
+        f"付款人：{payer['display_name']}\n\n輸入類別和金額（例：早餐 50、計程車 300/3、一番賞 50 50）："
+    )
+    return AWAIT_AMOUNT_CAT
 
 
-async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text.strip()
-    try:
-        # 支援四則運算（如 100*2、300/3、50+30-10）及空格加總（如 50 50）
-        import re
-        expr = text.replace("，", ",").replace("x", "*").replace("×", "*").replace("÷", "/")
-        if re.fullmatch(r"[\d\s\.\+\-\*\/\(\)]+", expr):
-            # 空格分隔純數字 → 加總
-            if re.fullmatch(r"[\d\s\.]+", expr):
-                amount = sum(float(p) for p in expr.split())
-            else:
-                amount = float(eval(expr))  # noqa: S307
-        else:
-            raise ValueError
-        if amount <= 0:
-            raise ValueError
-    except Exception:
-        await update.message.reply_text("請輸入金額，支援：\n・空格加總：50 50\n・四則運算：100*2、300/3、50+30")
-        return AWAIT_AMOUNT
+def _parse_cat_amount(text: str):
+    """Parse 'category amount_expr' — returns (category, amount) or raises ValueError."""
+    import re
+    tokens = text.strip().split()
+    if len(tokens) < 2:
+        raise ValueError
+    for split_at in range(1, len(tokens)):
+        cat = " ".join(tokens[:split_at])
+        amt_str = " ".join(tokens[split_at:]).replace("×", "*").replace("÷", "/").replace("x", "*")
+        try:
+            if re.fullmatch(r"[\d\s\.\+\-\*\/\(\)]+", amt_str):
+                if re.fullmatch(r"[\d\s\.]+", amt_str):
+                    amount = sum(float(p) for p in amt_str.split())
+                else:
+                    amount = float(eval(amt_str))  # noqa: S307
+                if amount > 0:
+                    return cat, amount
+        except Exception:
+            continue
+    raise ValueError
 
-    context.user_data["amount"] = amount
-    await update.message.delete()
 
+def _date_picker_rows() -> list:
     today = date.today()
     day_buttons = []
     for i in range(7):
@@ -145,11 +146,29 @@ async def receive_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     rows = [day_buttons[i:i+4] for i in range(0, len(day_buttons), 4)]
     rows.append([InlineKeyboardButton("📅 其他日期（自行輸入）", callback_data="date:custom")])
     rows.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
+    return rows
+
+
+async def receive_amount_cat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    try:
+        cat, amount = _parse_cat_amount(text)
+    except Exception:
+        await update.message.reply_text(
+            "格式：類別 金額\n例：早餐 50、計程車 300/3、一番賞 50 50"
+        )
+        return AWAIT_AMOUNT_CAT
+
+    context.user_data["category"] = cat
+    context.user_data["amount"] = amount
+    await update.message.delete()
+
+    payer = context.user_data["payer"]
     await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
         message_id=context.user_data["wizard_msg_id"],
-        text=f"付款人：{context.user_data['payer']['display_name']}\n金額：${amount:.0f}\n\n消費日期？",
-        reply_markup=InlineKeyboardMarkup(rows),
+        text=f"付款人：{payer['display_name']}\n類別：{cat}\n金額：${amount:.0f}\n\n消費日期？",
+        reply_markup=InlineKeyboardMarkup(_date_picker_rows()),
     )
     return AWAIT_DATE
 
@@ -172,15 +191,7 @@ async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return AWAIT_DATE_CUSTOM
 
     context.user_data["expense_date"] = selected_date
-    payer = context.user_data["payer"]
-    amount = context.user_data["amount"]
-    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
-    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
-    await query.message.edit_text(
-        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n日期：{selected_date[5:]}\n\n什麼用途？",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-    return AWAIT_CATEGORY
+    return await _show_splits(query.message, context)
 
 
 async def receive_date_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -215,53 +226,32 @@ async def receive_date_custom(update: Update, context: ContextTypes.DEFAULT_TYPE
         return AWAIT_DATE_CUSTOM
 
     context.user_data["expense_date"] = parsed.isoformat()
-    payer = context.user_data["payer"]
-    amount = context.user_data["amount"]
-    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
-    buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
-    await context.bot.edit_message_text(
-        chat_id=update.effective_chat.id,
-        message_id=context.user_data["wizard_msg_id"],
-        text=f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n日期：{parsed.strftime('%m/%d')}\n\n什麼用途？",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-    return AWAIT_CATEGORY
+    return await _show_splits_via_bot(context.bot, update.effective_chat.id, context)
 
 
-async def receive_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    if query.data == "wiz_cancel":
-        await query.message.delete()
-        return END
 
-    cat = query.data.split(":", 1)[1]
-    if cat == "✏️ 其他":
-        await query.message.edit_text("輸入用途說明：")
-        return AWAIT_CATEGORY_CUSTOM
-
-    context.user_data["category"] = cat
-    return await _show_splits(query.message, context)
-
-
-async def receive_category_custom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["category"] = update.message.text.strip()
-    await update.message.delete()
-    await context.bot.edit_message_text(
-        chat_id=update.effective_chat.id,
-        message_id=context.user_data["wizard_msg_id"],
-        text=f"用途：{context.user_data['category']}\n\n選分帳方式：\n✅ 平分 → 兩人均攤\n💳 全額代墊 → 我幫你付，你欠我全額\n🚫 不計帳 → 純記錄，不產生欠款",
-        reply_markup=_splits_markup(),
-    )
-    return AWAIT_SPLITS
-
-
-async def _show_splits(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+def _splits_text(context: ContextTypes.DEFAULT_TYPE) -> str:
     payer = context.user_data["payer"]
     amount = context.user_data["amount"]
     cat = context.user_data["category"]
-    await msg.edit_text(
-        f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n用途：{cat}\n\n選分帳方式：\n✅ 平分 → 兩人均攤\n💳 全額代墊 → 我幫你付，你欠我全額\n🚫 不計帳 → 純記錄，不產生欠款",
+    exp_date = context.user_data.get("expense_date", "")
+    date_str = f"\n日期：{exp_date[5:]}" if exp_date else ""
+    return (
+        f"付款人：{payer['display_name']}\n類別：{cat}\n金額：${amount:.0f}{date_str}\n\n"
+        f"選分帳方式：\n✅ 平分 → 兩人均攤\n💳 全額代墊 → 我幫你付，你欠我全額\n🚫 不計帳 → 純記錄，不產生欠款"
+    )
+
+
+async def _show_splits(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await msg.edit_text(_splits_text(context), reply_markup=_splits_markup())
+    return AWAIT_SPLITS
+
+
+async def _show_splits_via_bot(bot, chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=context.user_data["wizard_msg_id"],
+        text=_splits_text(context),
         reply_markup=_splits_markup(),
     )
     return AWAIT_SPLITS
@@ -329,8 +319,7 @@ async def receive_splits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             InlineKeyboardButton("❌ 取消", callback_data="confirm:no"),
         ],
         [
-            InlineKeyboardButton("✏️ 改金額", callback_data="confirm:edit_amount"),
-            InlineKeyboardButton("🏷 改類別", callback_data="confirm:edit_category"),
+            InlineKeyboardButton("✏️ 修改類別/金額", callback_data="confirm:edit"),
         ],
     ]
     await query.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(buttons))
@@ -345,24 +334,14 @@ async def receive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.delete()
         return END
 
-    if query.data == "confirm:edit_amount":
+    if query.data == "confirm:edit":
         payer = context.user_data["payer"]
-        amount = context.user_data["amount"]
+        cat = context.user_data.get("category", "")
+        amount = context.user_data.get("amount", 0)
         await query.message.edit_text(
-            f"付款人：{payer['display_name']}\n目前金額：${amount:.0f}\n\n輸入新金額：",
+            f"付款人：{payer['display_name']}\n目前：{cat} ${amount:.0f}\n\n重新輸入類別和金額："
         )
-        return AWAIT_AMOUNT
-
-    if query.data == "confirm:edit_category":
-        payer = context.user_data["payer"]
-        amount = context.user_data["amount"]
-        buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
-        buttons.append([InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")])
-        await query.message.edit_text(
-            f"付款人：{payer['display_name']}\n金額：${amount:.0f}\n\n選新類別：",
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
-        return AWAIT_CATEGORY
+        return AWAIT_AMOUNT_CAT
 
     group = context.user_data["group"]
     payer = context.user_data["payer"]

@@ -7,14 +7,14 @@ from telegram.ext import (
 from dotenv import load_dotenv
 from bot.handlers import (
     start, reset,
-    add_expense_start, receive_payer, receive_amount, receive_date, receive_date_custom,
-    receive_category, receive_category_custom, receive_splits, receive_confirm,
+    add_expense_start, receive_payer, receive_amount_cat, receive_date, receive_date_custom,
+    receive_splits, receive_confirm,
     wiz_cancel,
     settle_start, do_settle, settle_close,
     records_show, records_close, expense_delete, settlement_delete,
     balance_detail, balance_detail_close,
     auto_register,
-    AWAIT_PAYER, AWAIT_AMOUNT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_CATEGORY, AWAIT_CATEGORY_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
+    AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
 )
 
 load_dotenv()
@@ -29,11 +29,9 @@ def main():
         entry_points=[CallbackQueryHandler(add_expense_start, pattern="^add_expense$")],
         states={
             AWAIT_PAYER: [CallbackQueryHandler(receive_payer, pattern="^(payer:|wiz_cancel)")],
-            AWAIT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_amount)],
+            AWAIT_AMOUNT_CAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_amount_cat)],
             AWAIT_DATE: [CallbackQueryHandler(receive_date, pattern="^(date:|wiz_cancel)")],
             AWAIT_DATE_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date_custom)],
-            AWAIT_CATEGORY: [CallbackQueryHandler(receive_category, pattern="^(cat:|wiz_cancel)")],
-            AWAIT_CATEGORY_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_category_custom)],
             AWAIT_SPLITS: [CallbackQueryHandler(receive_splits, pattern="^(splits:|wiz_cancel)")],
             AWAIT_CONFIRM: [CallbackQueryHandler(receive_confirm, pattern="^confirm:")],
         },
