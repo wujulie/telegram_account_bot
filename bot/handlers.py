@@ -11,7 +11,7 @@ from bot.dashboard import format_dashboard, dashboard_keyboard, refresh_dashboar
 logger = logging.getLogger(__name__)
 
 # Conversation states for add-expense wizard
-AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM = range(6)
+AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS = range(5)
 
 END = -1
 
@@ -279,77 +279,17 @@ async def receive_splits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     cat = context.user_data["category"]
 
     if query.data == "splits:none":
-        summary = (
-            f"📝 確認支出\n\n"
-            f"付款：{payer['display_name']}\n"
-            f"金額：${amount:.0f}\n"
-            f"用途：{cat}\n"
-            f"（純記錄，不計欠款）"
-        )
-        context.user_data.update({"split_members": [], "share": 0})
+        split_members, share = [], 0
     elif query.data == "splits:full":
         non_payers = [m for m in members if m["id"] != payer["id"]]
         n = len(non_payers) if non_payers else 1
         share = round(amount / n, 2)
-        split_lines = "  ".join([f"{m['display_name']} ${share:.0f}" for m in non_payers])
-        summary = (
-            f"📝 確認支出\n\n"
-            f"付款：{payer['display_name']}\n"
-            f"金額：${amount:.0f}\n"
-            f"用途：{cat}\n"
-            f"代墊：{split_lines}"
-        )
-        context.user_data.update({"split_members": non_payers, "share": share})
+        split_members = non_payers
     else:
         split_members = members
-        n = len(split_members)
-        share = round(amount / n, 2)
-        split_lines = "  ".join([f"{m['display_name']} ${share:.0f}" for m in split_members])
-        summary = (
-            f"📝 確認支出\n\n"
-            f"付款：{payer['display_name']}\n"
-            f"金額：${amount:.0f}\n"
-            f"用途：{cat}\n"
-            f"平分：{split_lines}"
-        )
-        context.user_data.update({"split_members": split_members, "share": share})
-    buttons = [
-        [
-            InlineKeyboardButton("✅ 確認", callback_data="confirm:yes"),
-            InlineKeyboardButton("❌ 取消", callback_data="confirm:no"),
-        ],
-        [
-            InlineKeyboardButton("✏️ 修改類別/金額", callback_data="confirm:edit"),
-        ],
-    ]
-    await query.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(buttons))
-    return AWAIT_CONFIRM
-
-
-async def receive_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "confirm:no":
-        await query.message.delete()
-        return END
-
-    if query.data == "confirm:edit":
-        payer = context.user_data["payer"]
-        cat = context.user_data.get("category", "")
-        amount = context.user_data.get("amount", 0)
-        await query.message.edit_text(
-            f"付款人：{payer['display_name']}\n目前：{cat} ${amount:.0f}\n\n重新輸入類別和金額："
-        )
-        return AWAIT_AMOUNT_CAT
+        share = round(amount / len(split_members), 2)
 
     group = context.user_data["group"]
-    payer = context.user_data["payer"]
-    amount = context.user_data["amount"]
-    cat = context.user_data["category"]
-    split_members = context.user_data["split_members"]
-    share = context.user_data["share"]
-
     expense_date = context.user_data.get("expense_date")
     splits = [{"member_id": m["id"], "share_amount": share} for m in split_members]
     db.add_expense(group["id"], payer["id"], amount, cat, expense_date, splits)

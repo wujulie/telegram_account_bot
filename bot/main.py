@@ -8,13 +8,13 @@ from dotenv import load_dotenv
 from bot.handlers import (
     start, reset,
     add_expense_start, receive_payer, receive_amount_cat, receive_date, receive_date_custom,
-    receive_splits, receive_confirm,
+    receive_splits,
     wiz_cancel,
     settle_start, do_settle, settle_close,
     records_show, records_close, expense_delete, settlement_delete,
     balance_detail, balance_detail_close,
     auto_register,
-    AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS, AWAIT_CONFIRM,
+    AWAIT_PAYER, AWAIT_AMOUNT_CAT, AWAIT_DATE, AWAIT_DATE_CUSTOM, AWAIT_SPLITS,
 )
 
 load_dotenv()
@@ -33,7 +33,6 @@ def main():
             AWAIT_DATE: [CallbackQueryHandler(receive_date, pattern="^(date:|wiz_cancel)")],
             AWAIT_DATE_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date_custom)],
             AWAIT_SPLITS: [CallbackQueryHandler(receive_splits, pattern="^(splits:|wiz_cancel)")],
-            AWAIT_CONFIRM: [CallbackQueryHandler(receive_confirm, pattern="^confirm:")],
         },
         fallbacks=[CallbackQueryHandler(wiz_cancel, pattern="^wiz_cancel$")],
         per_message=False,
