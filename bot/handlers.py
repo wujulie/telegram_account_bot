@@ -260,8 +260,9 @@ async def _show_splits(msg, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def _splits_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ 是，平分", callback_data="splits:all")],
-        [InlineKeyboardButton("🚫 否，不分帳", callback_data="splits:none")],
+        [InlineKeyboardButton("✅ 平分", callback_data="splits:all")],
+        [InlineKeyboardButton("💳 全額代墊（對方欠全額）", callback_data="splits:full")],
+        [InlineKeyboardButton("🚫 不計帳（純記錄）", callback_data="splits:none")],
         [InlineKeyboardButton("❌ 取消", callback_data="wiz_cancel")],
     ])
 
@@ -284,9 +285,22 @@ async def receive_splits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"付款：{payer['display_name']}\n"
             f"金額：${amount:.0f}\n"
             f"用途：{cat}\n"
-            f"（不分帳）"
+            f"（純記錄，不計欠款）"
         )
         context.user_data.update({"split_members": [], "share": 0})
+    elif query.data == "splits:full":
+        non_payers = [m for m in members if m["id"] != payer["id"]]
+        n = len(non_payers) if non_payers else 1
+        share = round(amount / n, 2)
+        split_lines = "  ".join([f"{m['display_name']} ${share:.0f}" for m in non_payers])
+        summary = (
+            f"📝 確認支出\n\n"
+            f"付款：{payer['display_name']}\n"
+            f"金額：${amount:.0f}\n"
+            f"用途：{cat}\n"
+            f"代墊：{split_lines}"
+        )
+        context.user_data.update({"split_members": non_payers, "share": share})
     else:
         split_members = members
         n = len(split_members)
@@ -444,7 +458,7 @@ async def _send_records(message, group: dict, offset: int) -> None:
         for e in page:
             payer = (e.get("members") or {}).get("display_name", "?")
             label = e.get("category", "")
-            date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_rec_date(e["created_at"])
+            date_str = e["expense_date"][5:] if e.get("expense_date") else (e.get("description") or _fmt_rec_date(e["created_at"]))
             btn_label = f"🗑 {date_str} {label} ${float(e['amount']):.0f} {payer}付"
             rows.append([InlineKeyboardButton(btn_label, callback_data=f"del_expense:{e['id']}:{offset}")])
     else:
