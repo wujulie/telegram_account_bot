@@ -436,18 +436,31 @@ async def _send_records(message, group: dict, offset: int) -> None:
     has_next = len(expenses) > PAGE
     page = expenses[:PAGE]
 
-    if not page:
-        await message.reply_text("沒有支出記錄。")
-        return
-
-    page_num = offset // PAGE + 1
     rows = []
-    for e in page:
-        payer = (e.get("members") or {}).get("display_name", "?")
-        label = e.get("category", "")
-        date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_rec_date(e["created_at"])
-        btn_label = f"🗑 {date_str} {label} ${float(e['amount']):.0f} {payer}付"
-        rows.append([InlineKeyboardButton(btn_label, callback_data=f"del_expense:{e['id']}:{offset}")])
+
+    if page:
+        page_num = offset // PAGE + 1
+        rows.append([InlineKeyboardButton(f"── 支出記錄（第{page_num}頁）──", callback_data="noop")])
+        for e in page:
+            payer = (e.get("members") or {}).get("display_name", "?")
+            label = e.get("category", "")
+            date_str = e["expense_date"][5:] if e.get("expense_date") else _fmt_rec_date(e["created_at"])
+            btn_label = f"🗑 {date_str} {label} ${float(e['amount']):.0f} {payer}付"
+            rows.append([InlineKeyboardButton(btn_label, callback_data=f"del_expense:{e['id']}:{offset}")])
+    else:
+        rows.append([InlineKeyboardButton("── 無支出記錄 ──", callback_data="noop")])
+
+    # 還款記錄（只在第一頁顯示）
+    if offset == 0:
+        settlements = db.get_all_settlements(group["id"])
+        if settlements:
+            rows.append([InlineKeyboardButton("── 還款記錄 ──", callback_data="noop")])
+            for s in settlements:
+                from_name = (s.get("from_member") or {}).get("display_name", "?")
+                to_name = (s.get("to_member") or {}).get("display_name", "?")
+                date_str = _fmt_rec_date(s["created_at"])
+                btn_label = f"🗑 {date_str} {from_name}→{to_name} ${float(s['amount']):.0f}"
+                rows.append([InlineKeyboardButton(btn_label, callback_data=f"del_settle:{s['id']}:{offset}")])
 
     nav = []
     if offset > 0:
@@ -457,8 +470,7 @@ async def _send_records(message, group: dict, offset: int) -> None:
     nav.append(InlineKeyboardButton("❌ 關閉", callback_data="records_close"))
     rows.append(nav)
 
-    header = f"📋 全部支出（第{page_num}頁）\n點按鈕可刪除該筆記錄"
-    await message.reply_text(header, reply_markup=InlineKeyboardMarkup(rows))
+    await message.reply_text("📋 記錄（點按鈕刪除）", reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def records_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -475,6 +487,18 @@ async def expense_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     db.delete_expense(expense_id)
     chat = update.effective_chat
     group = db.get_or_create_group(chat.id, chat.title or "群組")
+    await _send_records(query.message, group, offset)
+
+
+async def settlement_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    settlement_id, offset = parts[1], int(parts[2])
+    db.delete_settlement(settlement_id)
+    chat = update.effective_chat
+    group = db.get_or_create_group(chat.id, chat.title or "群組")
+    await _do_refresh(context.bot, group)
     await _send_records(query.message, group, offset)
 
 

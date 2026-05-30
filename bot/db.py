@@ -98,6 +98,20 @@ def add_settlement(group_id: str, from_member_id: str, to_member_id: str, amount
     }).execute().data[0]
 
 
+def get_all_settlements(group_id: str) -> list[dict]:
+    return (
+        supabase.table("settlements")
+        .select("*, from_member:members!from_member_id(display_name), to_member:members!to_member_id(display_name)")
+        .eq("group_id", group_id)
+        .order("created_at", desc=True)
+        .execute().data
+    )
+
+
+def delete_settlement(settlement_id: str) -> None:
+    supabase.table("settlements").delete().eq("id", settlement_id).execute()
+
+
 def get_raw_debts(group_id: str) -> dict:
     splits = (
         supabase.table("expense_splits")
