@@ -1283,13 +1283,13 @@ td {
 }
 
 .calc-modal-btn-op {
-  background: #4caf7d;
+  background: linear-gradient(135deg, #ffb84d, #ff8c42);
   color: #ffffff;
   border-color: transparent;
 }
 
 .calc-modal-btn-op:active {
-  background: #3a9968;
+  background: linear-gradient(135deg, #ff9f1a, #e67300);
 }
 
 .calc-modal-control-row {
@@ -1304,13 +1304,13 @@ td {
 }
 
 .calc-modal-btn-ac {
-  background: #4caf7d;
+  background: linear-gradient(135deg, #ffb84d, #ff8c42);
   color: #ffffff;
   border-color: transparent;
 }
 
 .calc-modal-btn-eq {
-  background: #4caf7d;
+  background: linear-gradient(135deg, #ffb84d, #ff8c42);
   color: #ffffff;
   border-color: transparent;
 }
