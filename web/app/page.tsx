@@ -3,6 +3,7 @@ import { WalletIcon } from "./components/icons";
 
 export default function Home() {
   const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   return (
     <main className="login-page">
@@ -22,19 +23,21 @@ export default function Home() {
               data-telegram-login={botUsername}
               data-size="large"
               data-radius="8"
-              data-auth-url="/api/auth"
+              data-auth-url={`${appUrl}/api/auth`}
               data-request-access="write"
             />
           </div>
         ) : null}
 
-        <form action="/api/auth" method="post" className="login-actions">
-          <input name="id" type="hidden" value="1921569966" />
-          <input name="first_name" type="hidden" value="Julie" />
-          <button className="primary-button" type="submit">
-            Dev Login
-          </button>
-        </form>
+        {process.env.NODE_ENV !== "production" && (
+          <form action="/api/auth" method="post" className="login-actions">
+            <input name="id" type="hidden" value="1921569966" />
+            <input name="first_name" type="hidden" value="Julie" />
+            <button className="primary-button" type="submit">
+              Dev Login
+            </button>
+          </form>
+        )}
       </section>
     </main>
   );
