@@ -1,5 +1,5 @@
-import Script from "next/script";
 import { WalletIcon } from "./components/icons";
+import { TelegramWidget } from "./components/telegram-widget";
 
 export default function Home() {
   const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
@@ -16,30 +16,16 @@ export default function Home() {
         <p className="muted">使用 Telegram 登入。</p>
 
         {botUsername ? (
-          <div className="telegram-widget-frame">
-            <Script
-              async
-              src="https://telegram.org/js/telegram-widget.js?22"
-              data-telegram-login={botUsername}
-              data-size="large"
-              data-radius="8"
-              data-auth-url={`${appUrl}/api/auth`}
-              data-request-access="write"
-            />
-          </div>
+          <TelegramWidget botUsername={botUsername} authUrl={`${appUrl}/api/auth`} />
         ) : (
-          <p className="muted" style={{ color: "red" }}>
-            缺少 NEXT_PUBLIC_TELEGRAM_BOT_USERNAME env var
-          </p>
+          <p style={{ color: "red" }}>缺少 NEXT_PUBLIC_TELEGRAM_BOT_USERNAME</p>
         )}
 
         {process.env.NODE_ENV !== "production" && (
           <form action="/api/auth" method="post" className="login-actions">
             <input name="id" type="hidden" value="1921569966" />
             <input name="first_name" type="hidden" value="Julie" />
-            <button className="primary-button" type="submit">
-              Dev Login
-            </button>
+            <button className="primary-button" type="submit">Dev Login</button>
           </form>
         )}
       </section>
