@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { AppNav } from "../components/nav";
-import { PlusIcon, TrashIcon } from "../components/icons";
+import { AmountInput } from "../components/calculator";
+import { PencilIcon, PlusIcon, TrashIcon } from "../components/icons";
 import { currency, shortDate } from "../lib/format";
 import type { Balance, GroupExpense, GroupMember } from "../lib/types";
 
@@ -72,6 +73,34 @@ function CategoryIcon({ category }: { category: string }) {
   );
 }
 
+function splitLabel(expense: GroupExpense) {
+  if (expense.split_count === 0) return "不計帳";
+
+  const recipients = expense.split_participants.filter(
+    (participant) => participant.member_id !== expense.paid_by_member_id,
+  );
+
+  if (recipients.length === 0) return "已分帳 · 僅付款人";
+
+  if (recipients.length === 1) {
+    const recipient = recipients[0];
+    return `分帳給 ${recipient.name} · ${currency(recipient.amount)}`;
+  }
+
+  const names = recipients.map((recipient) => recipient.name).join("、");
+  const sameAmount = recipients.every(
+    (recipient) => Math.abs(recipient.amount - recipients[0].amount) < 0.005,
+  );
+
+  if (sameAmount) {
+    return `分帳給 ${names} · 各 ${currency(recipients[0].amount)}`;
+  }
+
+  return `分帳給 ${recipients
+    .map((recipient) => `${recipient.name} ${currency(recipient.amount)}`)
+    .join("、")}`;
+}
+
 async function readApi<T>(url: string, options?: RequestInit) {
   const response = await fetch(url, {
     ...options,
@@ -96,6 +125,7 @@ export function GroupClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingExpense, setEditingExpense] = useState<GroupExpense | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const balance = balances[0];
@@ -166,6 +196,32 @@ export function GroupClient() {
       setError(deleteError instanceof Error ? deleteError.message : "刪除失敗");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const updateExpense = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingExpense) return;
+
+    setSaving(true);
+    setError(null);
+
+    const form = new FormData(event.currentTarget);
+
+    try {
+      await readApi<GroupExpense>(`/api/group/expenses/${editingExpense.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          category: String(form.get("category") || ""),
+          amount: Number(form.get("amount")),
+        }),
+      });
+      setEditingExpense(null);
+      await loadGroup();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "更新失敗");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -260,7 +316,7 @@ export function GroupClient() {
             </label>
             <label>
               <span>金額</span>
-              <input name="amount" inputMode="numeric" placeholder="860" required />
+              <AmountInput name="amount" placeholder="860" required />
             </label>
             <label>
               <span>分類</span>
@@ -361,24 +417,76 @@ export function GroupClient() {
                   <span>
                     {expense.payer_name} 付款 · {shortDate(expense.expense_date ?? expense.description ?? expense.created_at)}
                   </span>
+                  <span className={expense.split_count ? "split-chip split-chip-active" : "split-chip"}>
+                    {splitLabel(expense)}
+                  </span>
                 </div>
                 <strong className="transaction-amount money negative">{currency(expense.amount)}</strong>
-                <button
-                  className="icon-button"
-                  type="button"
-                  aria-label="刪除"
-                  title="刪除"
-                  disabled={deletingId === expense.id}
-                  onClick={() => void deleteExpense(expense)}
-                >
-                  <TrashIcon className="size-4" />
-                </button>
+                <div className="transaction-actions">
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label="編輯"
+                    title="編輯"
+                    onClick={() => setEditingExpense(expense)}
+                  >
+                    <PencilIcon className="size-4" />
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    aria-label="刪除"
+                    title="刪除"
+                    disabled={deletingId === expense.id}
+                    onClick={() => void deleteExpense(expense)}
+                  >
+                    <TrashIcon className="size-4" />
+                  </button>
+                </div>
               </article>
             ))}
             {!loading && expenses.length === 0 ? <p className="empty-state">沒有共同費用。</p> : null}
           </div>
         </section>
       </main>
+
+      {editingExpense ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setEditingExpense(null)}>
+          <form
+            aria-labelledby="edit-expense-title"
+            className="glass-card edit-modal"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={updateExpense}
+          >
+            <div>
+              <p className="section-kicker">Edit Expense</p>
+              <h2 id="edit-expense-title">編輯共同費用</h2>
+              <p className="form-note">更新項目名稱與金額後，既有分帳金額會同步重算。</p>
+            </div>
+            <label>
+              <span>項目名稱</span>
+              <input name="category" defaultValue={editingExpense.category} required />
+            </label>
+            <label>
+              <span>金額</span>
+              <AmountInput name="amount" defaultValue={editingExpense.amount} required />
+            </label>
+            <div className="modal-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={saving}
+                onClick={() => setEditingExpense(null)}
+              >
+                取消
+              </button>
+              <button className="primary-button" type="submit" disabled={saving}>
+                {saving ? "更新中..." : "儲存變更"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
