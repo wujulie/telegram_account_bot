@@ -328,7 +328,6 @@ export function GroupClient() {
               <select name="split_type" defaultValue="equal">
                 <option value="equal">平分（各付一半）</option>
                 <option value="full">全額代墊（另一人欠全額）</option>
-                <option value="none">不計帳</option>
               </select>
             </label>
             <label>
@@ -418,9 +417,11 @@ export function GroupClient() {
                   <span>
                     {expense.payer_name} 付款 · {shortDate(expense.expense_date ?? expense.description ?? expense.created_at)}
                   </span>
-                  <span className={expense.split_count ? "split-chip split-chip-active" : "split-chip"}>
-                    {splitLabel(expense)}
-                  </span>
+                  {expense.split_count > 0 && (
+                    <span className="split-chip split-chip-active">
+                      {splitLabel(expense)}
+                    </span>
+                  )}
                 </div>
                 <strong className="transaction-amount money negative">{currency(expense.amount)}</strong>
                 <div className="transaction-actions">
@@ -474,10 +475,9 @@ export function GroupClient() {
             </label>
             <label>
               <span>分帳方式</span>
-              <select name="split_type" defaultValue={editingExpense.split_count > 0 ? "equal" : "none"}>
+              <select name="split_type" defaultValue={editingExpense.split_count > 0 ? "equal" : "full"}>
                 <option value="equal">平分（各付一半）</option>
                 <option value="full">全額代墊（另一人欠全額）</option>
-                <option value="none">不計帳</option>
               </select>
             </label>
             <div className="modal-actions">

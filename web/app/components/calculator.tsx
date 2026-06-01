@@ -6,7 +6,6 @@ function safeEval(expr: string): number | null {
   const normalized = expr.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
   if (!/^[\d+\-*/().% ]+$/.test(normalized)) return null;
   try {
-    // eslint-disable-next-line no-new-func
     const result = Function(`"use strict"; return (${normalized})`)() as unknown;
     if (typeof result === "number" && isFinite(result) && result >= 0) {
       return Math.round(result * 100) / 100;
@@ -68,7 +67,10 @@ function CalculatorModal({ initial, onConfirm, onCancel }: CalculatorModalProps)
         aria-label="計算機"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="calc-modal-title">計算機</p>
+        <div className="calc-modal-header">
+          <p className="calc-modal-title">計算機</p>
+          <button type="button" className="calc-modal-close" onClick={onCancel} aria-label="關閉">✕</button>
+        </div>
 
         <div className="calc-modal-display">{display}</div>
 
