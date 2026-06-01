@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function safeEval(expr: string): number | null {
   const normalized = expr.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
@@ -60,12 +60,15 @@ function CalculatorModal({ initial, onConfirm, onCancel }: CalculatorModalProps)
   const display = expr || "0";
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
       <div
         className="glass-card calc-modal"
         role="dialog"
         aria-label="計算機"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="calc-modal-header">
           <p className="calc-modal-title">計算機</p>
@@ -125,6 +128,18 @@ type AmountInputProps = {
 export function AmountInput({ name, defaultValue, placeholder, required, disabled }: AmountInputProps) {
   const [value, setValue] = useState(defaultValue != null ? String(defaultValue) : "");
   const [calcOpen, setCalcOpen] = useState(false);
+  const lastClosedAt = useRef(0);
+
+  const open = () => {
+    if (disabled) return;
+    if (Date.now() - lastClosedAt.current < 400) return;
+    setCalcOpen(true);
+  };
+
+  const close = () => {
+    lastClosedAt.current = Date.now();
+    setCalcOpen(false);
+  };
 
   return (
     <>
@@ -137,7 +152,7 @@ export function AmountInput({ name, defaultValue, placeholder, required, disable
           required={required}
           disabled={disabled}
           readOnly
-          onClick={() => !disabled && setCalcOpen(true)}
+          onClick={open}
           onChange={() => {}}
           className="amount-input-field"
         />
@@ -146,7 +161,7 @@ export function AmountInput({ name, defaultValue, placeholder, required, disable
           className="amount-calc-btn"
           aria-label="開啟計算機"
           disabled={disabled}
-          onClick={() => !disabled && setCalcOpen(true)}
+          onClick={open}
         >
           🧮
         </button>
@@ -155,8 +170,8 @@ export function AmountInput({ name, defaultValue, placeholder, required, disable
       {calcOpen && (
         <CalculatorModal
           initial={value}
-          onConfirm={(v) => { setValue(v); setCalcOpen(false); }}
-          onCancel={() => setCalcOpen(false)}
+          onConfirm={(v) => { setValue(v); close(); }}
+          onCancel={close}
         />
       )}
     </>
