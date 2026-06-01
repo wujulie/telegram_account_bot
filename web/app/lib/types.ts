@@ -13,6 +13,13 @@ export type GroupExpense = {
   expense_date: string | null;
   description: string | null;
   created_at: string;
+  split_count: number;
+  split_total: number;
+  split_participants: Array<{
+    member_id: string;
+    name: string;
+    amount: number;
+  }>;
 };
 
 export type Balance = {

@@ -214,6 +214,7 @@ export function GroupClient() {
         body: JSON.stringify({
           category: String(form.get("category") || ""),
           amount: Number(form.get("amount")),
+          split_type: String(form.get("split_type") || ""),
         }),
       });
       setEditingExpense(null);
@@ -470,6 +471,14 @@ export function GroupClient() {
             <label>
               <span>金額</span>
               <AmountInput name="amount" defaultValue={editingExpense.amount} required />
+            </label>
+            <label>
+              <span>分帳方式</span>
+              <select name="split_type" defaultValue={editingExpense.split_count > 0 ? "equal" : "none"}>
+                <option value="equal">平分（各付一半）</option>
+                <option value="full">全額代墊（另一人欠全額）</option>
+                <option value="none">不計帳</option>
+              </select>
             </label>
             <div className="modal-actions">
               <button

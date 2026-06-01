@@ -19,6 +19,11 @@ type ExpenseRow = {
   description: string | null;
   created_at: string;
   members: { display_name: string } | null;
+  expense_splits?: Array<{
+    member_id: string;
+    share_amount: string | number;
+    members: { display_name: string } | null;
+  }>;
 };
 
 type SplitRow = {
@@ -86,7 +91,8 @@ export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
 export async function getGroupExpenses(groupId: string): Promise<GroupExpense[]> {
   const rows = await supabaseTable<ExpenseRow[]>("expenses", {
     query: {
-      select: "*,members!paid_by_member_id(display_name)",
+      select:
+        "*,members!paid_by_member_id(display_name),expense_splits(member_id,share_amount,members!expense_splits_member_id_fkey(display_name))",
       group_id: `eq.${groupId}`,
       order: "created_at.desc",
       limit: "50",
@@ -101,6 +107,15 @@ export async function getGroupExpenses(groupId: string): Promise<GroupExpense[]>
     expense_date: row.expense_date,
     description: row.description,
     created_at: row.created_at,
+    split_count: row.expense_splits?.length ?? 0,
+    split_total:
+      row.expense_splits?.reduce((sum, split) => sum + Number(split.share_amount), 0) ?? 0,
+    split_participants:
+      row.expense_splits?.map((split) => ({
+        member_id: split.member_id,
+        name: split.members?.display_name ?? "?",
+        amount: Number(split.share_amount),
+      })) ?? [],
   }));
 }
 

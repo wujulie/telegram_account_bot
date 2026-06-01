@@ -1200,3 +1200,124 @@ td {
   transform: scale(0.95);
   box-shadow: 0 2px 8px rgba(255, 140, 66, 0.25);
 }
+
+/* ── Calculator Modal ───────────────────────────────────────────────────── */
+
+.amount-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.amount-input-field {
+  flex: 1;
+  cursor: pointer;
+}
+
+.amount-calc-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  width: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 224, 138, 0.4);
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.amount-calc-btn:hover {
+  background: rgba(255, 184, 77, 0.5);
+}
+
+.calc-modal {
+  width: min(360px, 92vw);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calc-modal-title {
+  font-size: 18px;
+  font-weight: 850;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.calc-modal-display {
+  text-align: right;
+  font-size: 36px;
+  font-weight: 800;
+  font-family: var(--font-fira-code), monospace;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #f7f5f0;
+  min-height: 72px;
+  word-break: break-all;
+  color: var(--foreground);
+}
+
+.calc-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.calc-modal-btn {
+  min-height: 60px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #ffffff;
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease;
+}
+
+.calc-modal-btn:active {
+  transform: scale(0.92);
+  background: rgba(255, 184, 77, 0.25);
+}
+
+.calc-modal-btn-op {
+  background: #4caf7d;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.calc-modal-btn-op:active {
+  background: #3a9968;
+}
+
+.calc-modal-control-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.calc-modal-btn-del {
+  background: #f0f0f0;
+  color: #555;
+}
+
+.calc-modal-btn-ac {
+  background: #4caf7d;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.calc-modal-btn-eq {
+  background: #4caf7d;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.calc-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}

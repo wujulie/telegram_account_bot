@@ -63,6 +63,12 @@ export const groupExpenses: GroupExpense[] = [
     category: "餐飲",
     expense_date: "2026-05-29",
     created_at: "2026-05-29T10:10:00.000Z",
+    split_count: 2,
+    split_total: 860,
+    split_participants: [
+      { member_id: "m-101", name: "Fox", amount: 430 },
+      { member_id: "m-202", name: "Pudding", amount: 430 },
+    ],
   },
   {
     id: "gx-2",
@@ -73,6 +79,12 @@ export const groupExpenses: GroupExpense[] = [
     category: "生活",
     expense_date: "2026-05-27",
     created_at: "2026-05-27T08:00:00.000Z",
+    split_count: 2,
+    split_total: 420,
+    split_participants: [
+      { member_id: "m-101", name: "Fox", amount: 210 },
+      { member_id: "m-202", name: "Pudding", amount: 210 },
+    ],
   },
   {
     id: "gx-3",
@@ -83,6 +95,9 @@ export const groupExpenses: GroupExpense[] = [
     category: "生活",
     expense_date: "2026-05-22",
     created_at: "2026-05-22T15:40:00.000Z",
+    split_count: 0,
+    split_total: 0,
+    split_participants: [],
   },
 ];
 

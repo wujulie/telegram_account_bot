@@ -1,19 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-type Props = {
-  name: string;
-  defaultValue?: number | string;
-  placeholder?: string;
-  required?: boolean;
-  disabled?: boolean;
-};
+import { useEffect, useState } from "react";
 
 function safeEval(expr: string): number | null {
-  // Normalise display operators to JS operators
   const normalized = expr.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
-  // Only allow safe characters
   if (!/^[\d+\-*/().% ]+$/.test(normalized)) return null;
   try {
     // eslint-disable-next-line no-new-func
@@ -27,33 +17,33 @@ function safeEval(expr: string): number | null {
   }
 }
 
-const BUTTONS = [
+const ROWS = [
   ["7", "8", "9", "÷"],
   ["4", "5", "6", "×"],
   ["1", "2", "3", "−"],
-  [".", "0", "⌫", "+"],
+  ["0", "00", ".", "+"],
 ];
 
-export function AmountInput({ name, defaultValue, placeholder, required, disabled }: Props) {
-  const [open, setOpen] = useState(false);
-  const [expr, setExpr] = useState(defaultValue != null ? String(defaultValue) : "");
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const hiddenRef = useRef<HTMLInputElement>(null);
+type CalculatorModalProps = {
+  initial: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+};
 
-  // Close on outside click
+function CalculatorModal({ initial, onConfirm, onCancel }: CalculatorModalProps) {
+  const [expr, setExpr] = useState(initial);
+
+  // Close on Escape
   useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        confirm();
-      }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, expr]);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onCancel]);
 
   const press = (key: string) => {
-    if (key === "C") { setExpr(""); return; }
+    if (key === "AC") { setExpr(""); return; }
     if (key === "⌫") { setExpr((e) => e.slice(0, -1)); return; }
     if (key === "=") {
       const result = safeEval(expr);
@@ -63,82 +53,110 @@ export function AmountInput({ name, defaultValue, placeholder, required, disable
     setExpr((e) => e + key);
   };
 
-  const confirm = () => {
+  const handleConfirm = () => {
     const result = safeEval(expr);
-    const final = result !== null ? String(result) : expr;
-    setExpr(final);
-    // Sync hidden input for form submission
-    if (hiddenRef.current) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-      nativeSetter?.call(hiddenRef.current, final);
-      hiddenRef.current.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    setOpen(false);
+    onConfirm(result !== null ? String(result) : expr);
   };
 
   const display = expr || "0";
-  const evaluated = safeEval(expr);
-  const preview = evaluated !== null && String(evaluated) !== expr ? `= ${evaluated}` : null;
 
   return (
-    <div ref={wrapRef} className="calc-wrap">
-      {/* Visible display — click to open */}
+    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
       <div
-        className={`calc-trigger ${disabled ? "calc-trigger-disabled" : ""}`}
-        role="button"
-        tabIndex={disabled ? -1 : 0}
-        aria-label="輸入金額"
-        onClick={() => !disabled && setOpen(true)}
-        onKeyDown={(e) => e.key === "Enter" && !disabled && setOpen(true)}
+        className="glass-card calc-modal"
+        role="dialog"
+        aria-label="計算機"
+        onClick={(e) => e.stopPropagation()}
       >
-        <span className={expr ? "" : "calc-placeholder"}>{expr || placeholder || "0"}</span>
-        {preview && <span className="calc-preview">{preview}</span>}
+        <p className="calc-modal-title">計算機</p>
+
+        <div className="calc-modal-display">{display}</div>
+
+        <div className="calc-modal-grid">
+          {ROWS.map((row) =>
+            row.map((btn) => (
+              <button
+                key={btn}
+                type="button"
+                className={`calc-modal-btn ${["+", "−", "×", "÷"].includes(btn) ? "calc-modal-btn-op" : ""}`}
+                onClick={() => press(btn)}
+              >
+                {btn}
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="calc-modal-control-row">
+          <button type="button" className="calc-modal-btn calc-modal-btn-del" onClick={() => press("⌫")}>
+            ⌫
+          </button>
+          <button type="button" className="calc-modal-btn calc-modal-btn-ac" onClick={() => press("AC")}>
+            AC
+          </button>
+          <button type="button" className="calc-modal-btn calc-modal-btn-eq" onClick={() => press("=")}>
+            =
+          </button>
+        </div>
+
+        <div className="calc-modal-actions">
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            取消
+          </button>
+          <button type="button" className="primary-button" onClick={handleConfirm}>
+            填入
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type AmountInputProps = {
+  name: string;
+  defaultValue?: number | string;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+};
+
+export function AmountInput({ name, defaultValue, placeholder, required, disabled }: AmountInputProps) {
+  const [value, setValue] = useState(defaultValue != null ? String(defaultValue) : "");
+  const [calcOpen, setCalcOpen] = useState(false);
+
+  return (
+    <>
+      <div className="amount-input-wrap">
+        <input
+          type="text"
+          name={name}
+          value={value}
+          placeholder={placeholder}
+          required={required}
+          disabled={disabled}
+          readOnly
+          onClick={() => !disabled && setCalcOpen(true)}
+          onChange={() => {}}
+          className="amount-input-field"
+        />
+        <button
+          type="button"
+          className="amount-calc-btn"
+          aria-label="開啟計算機"
+          disabled={disabled}
+          onClick={() => !disabled && setCalcOpen(true)}
+        >
+          🧮
+        </button>
       </div>
 
-      {/* Hidden input for form submission */}
-      <input
-        ref={hiddenRef}
-        type="hidden"
-        name={name}
-        required={required}
-        defaultValue={defaultValue}
-      />
-
-      {open && (
-        <div className="calculator-popup" role="dialog" aria-label="計算機">
-          <div className="calc-display">
-            <span className="calc-expr">{display}</span>
-            {preview && <span className="calc-preview">{preview}</span>}
-          </div>
-
-          <div className="calc-grid">
-            {BUTTONS.map((row) =>
-              row.map((btn) => (
-                <button
-                  key={btn}
-                  type="button"
-                  className={`calc-btn ${["+", "−", "×", "÷"].includes(btn) ? "calc-btn-op" : ""} ${btn === "⌫" ? "calc-btn-del" : ""}`}
-                  onClick={() => press(btn)}
-                >
-                  {btn}
-                </button>
-              ))
-            )}
-          </div>
-
-          <div className="calc-bottom">
-            <button type="button" className="calc-btn calc-btn-clear" onClick={() => press("C")}>
-              清除
-            </button>
-            <button type="button" className="calc-btn calc-btn-eq" onClick={() => press("=")}>
-              =
-            </button>
-            <button type="button" className="calc-btn-confirm" onClick={confirm}>
-              確認
-            </button>
-          </div>
-        </div>
+      {calcOpen && (
+        <CalculatorModal
+          initial={value}
+          onConfirm={(v) => { setValue(v); setCalcOpen(false); }}
+          onCancel={() => setCalcOpen(false)}
+        />
       )}
-    </div>
+    </>
   );
 }
