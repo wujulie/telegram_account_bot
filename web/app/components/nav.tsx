@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LogOutIcon, UsersIcon, WalletIcon } from "./icons";
+import { UsersIcon, WalletIcon } from "./icons";
 
 export function AppNav() {
   return (
@@ -16,11 +16,6 @@ export function AppNav() {
             <UsersIcon className="size-4" />
             共同帳本
           </Link>
-          <form action="/api/auth/logout" method="post">
-            <button className="icon-button" type="submit" aria-label="登出" title="登出">
-              <LogOutIcon className="size-4" />
-            </button>
-          </form>
         </nav>
       </header>
     </>

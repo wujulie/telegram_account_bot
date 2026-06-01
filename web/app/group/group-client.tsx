@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { AppNav } from "../components/nav";
 import { PlusIcon, TrashIcon } from "../components/icons";
 import { currency, shortDate } from "../lib/format";
@@ -10,6 +11,66 @@ type ApiResult<T> = {
   data?: T;
   error?: string;
 };
+
+const categoryTone: Record<string, string> = {
+  餐飲: "food",
+  生活: "home",
+  交通: "travel",
+  其他: "other",
+};
+
+function categoryClass(category: string) {
+  const matched = Object.keys(categoryTone).find((key) => category.includes(key));
+  return categoryTone[matched ?? "其他"];
+}
+
+function CategoryIcon({ category }: { category: string }) {
+  const tone = categoryClass(category);
+
+  if (tone === "food") {
+    return (
+      <svg aria-hidden="true" className="category-icon" viewBox="0 0 24 24">
+        <path d="M7 3v8" />
+        <path d="M4.5 3v8" />
+        <path d="M9.5 3v8" />
+        <path d="M4.5 11h5L8 21H6Z" />
+        <path d="M16 3c2 1.8 3 4 3 6.6V21h-4v-7.2c-1.7-.7-2.5-2.1-2.5-4.2C12.5 6.9 13.7 4.7 16 3Z" />
+      </svg>
+    );
+  }
+
+  if (tone === "travel") {
+    return (
+      <svg aria-hidden="true" className="category-icon" viewBox="0 0 24 24">
+        <path d="M6 5h12a2 2 0 0 1 2 2v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a2 2 0 0 1 2-2Z" />
+        <path d="M7 10h10" />
+        <path d="M8 18l-1.5 3" />
+        <path d="M16 18l1.5 3" />
+        <path d="M8.5 14h.01" />
+        <path d="M15.5 14h.01" />
+      </svg>
+    );
+  }
+
+  if (tone === "home") {
+    return (
+      <svg aria-hidden="true" className="category-icon" viewBox="0 0 24 24">
+        <path d="M4 11.5 12 5l8 6.5" />
+        <path d="M6.5 10.5V20h11v-9.5" />
+        <path d="M10 20v-5h4v5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" className="category-icon" viewBox="0 0 24 24">
+      <path d="M7 3h10v18l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2Z" />
+      <path d="M9.5 8h5" />
+      <path d="M9.5 12h5" />
+      <path d="M9.5 16h3" />
+    </svg>
+  );
+}
 
 async function readApi<T>(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -135,39 +196,48 @@ export function GroupClient() {
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell group-shell">
       <AppNav />
       <main className="page-content">
-        <section className="hero-band">
-          <div>
-            <p className="section-kicker">Group Account</p>
+        <section className="hero-band fox-hero">
+          <Image
+            alt=""
+            aria-hidden="true"
+            className="hero-bg"
+            fill
+            priority
+            sizes="(max-width: 860px) 100vw, 1180px"
+            src="/fox-pudding-hero.png"
+          />
+          <div className="hero-copy">
+            <p className="section-kicker">Fox Pudding</p>
             <h1>共同帳本</h1>
-            <p className="muted">共同支出、分攤與結清。</p>
-          </div>
-          <div className="glass-card balance-card">
-            <span>目前結算</span>
-            <strong>
-              {balance
-                ? `${balance.from_name} 欠 ${balance.to_name} ${currency(balance.amount)}`
-                : "大家都清了 🎉"}
-            </strong>
+            <p className="muted">把代墊、分攤與結清收進一個溫暖的小帳本。</p>
+            <div className="hero-summary">
+              <span>本群共同支出</span>
+              <strong>{currency(total)}</strong>
+              <small>{members.length ? `${members.length} 位成員一起記帳` : "等待群組成員加入"}</small>
+            </div>
           </div>
         </section>
 
         {error ? <div className="status-banner error">{error}</div> : null}
 
         <section className="stats-grid">
-          <article className="glass-card stat-card">
+          <article className="glass-card stat-card stat-card-orange">
             <span>共同支出</span>
             <strong className="money negative">{currency(total)}</strong>
+            <small>所有已記錄費用</small>
           </article>
-          <article className="glass-card stat-card">
+          <article className="glass-card stat-card stat-card-blue">
             <span>成員</span>
             <strong>{members.length ? members.map((m) => m.display_name).join(" / ") : "沒有群組"}</strong>
+            <small>{members.length ? `${members.length} 人分帳中` : "尚無成員資料"}</small>
           </article>
-          <article className="glass-card stat-card">
+          <article className="glass-card stat-card stat-card-yellow">
             <span>待結清</span>
             <strong className="money">{currency(balance?.amount ?? 0)}</strong>
+            <small>{balance ? `${balance.from_name} → ${balance.to_name}` : "目前沒有欠款"}</small>
           </article>
         </section>
 
@@ -176,6 +246,7 @@ export function GroupClient() {
             <div>
               <p className="section-kicker">Add Expense</p>
               <h2>新增共同費用</h2>
+              <p className="form-note">記下剛剛代墊的費用，Fox Pudding 會幫你們算清楚。</p>
             </div>
             <label>
               <span>付款人</span>
@@ -222,13 +293,21 @@ export function GroupClient() {
               <p className="section-kicker">Settle Up</p>
               <h2>結清</h2>
             </div>
-            {balance ? (
-              <p className="muted">
-                {balance.from_name} 還給 {balance.to_name}
-              </p>
-            ) : (
-              <p className="muted">目前沒有待結清金額</p>
-            )}
+            <div className="settle-story wide">
+              {balance ? (
+                <>
+                  <span>{balance.from_name}</span>
+                  <strong>還給 {balance.to_name}</strong>
+                  <b className="money">{currency(balance.amount)}</b>
+                </>
+              ) : (
+                <>
+                  <span>大家都清爽了</span>
+                  <strong>目前沒有待結清金額</strong>
+                  <b className="money">{currency(0)}</b>
+                </>
+              )}
+            </div>
             <label>
               <span>金額</span>
               <input
@@ -271,40 +350,31 @@ export function GroupClient() {
             </div>
             <span className="pill">{loading ? "Loading..." : "最新優先"}</span>
           </div>
-          <div className="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th>付款人</th>
-                  <th>分類</th>
-                  <th className="align-right">金額</th>
-                  <th className="align-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map((expense) => (
-                  <tr key={expense.id}>
-                    <td>{shortDate(expense.expense_date ?? expense.description ?? expense.created_at)}</td>
-                    <td>{expense.payer_name}</td>
-                    <td>{expense.category}</td>
-                    <td className="align-right money negative">{currency(expense.amount)}</td>
-                    <td className="align-right row-actions">
-                      <button
-                        className="icon-button"
-                        type="button"
-                        aria-label="刪除"
-                        title="刪除"
-                        disabled={deletingId === expense.id}
-                        onClick={() => void deleteExpense(expense)}
-                      >
-                        <TrashIcon className="size-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="transaction-list">
+            {expenses.map((expense) => (
+              <article className="transaction-row" key={expense.id}>
+                <span className={`category-badge ${categoryClass(expense.category)}`}>
+                  <CategoryIcon category={expense.category} />
+                </span>
+                <div className="transaction-main">
+                  <strong>{expense.category}</strong>
+                  <span>
+                    {expense.payer_name} 付款 · {shortDate(expense.expense_date ?? expense.description ?? expense.created_at)}
+                  </span>
+                </div>
+                <strong className="transaction-amount money negative">{currency(expense.amount)}</strong>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="刪除"
+                  title="刪除"
+                  disabled={deletingId === expense.id}
+                  onClick={() => void deleteExpense(expense)}
+                >
+                  <TrashIcon className="size-4" />
+                </button>
+              </article>
+            ))}
             {!loading && expenses.length === 0 ? <p className="empty-state">沒有共同費用。</p> : null}
           </div>
         </section>
