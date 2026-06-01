@@ -1,91 +1,125 @@
-# Telegram 個人助理記帳機器人
+# Fox Pudding Account 🍮
+
+雙人共同帳本系統。Telegram Bot（記帳 + 結算）+ PWA 網頁（查帳 + 管理）。
+
+---
+
+## 架構
+
+```
+telegram_account_bot/
+├── bot/              # Telegram Bot（Python）
+│   ├── main.py       # 啟動入口、指令註冊
+│   ├── handlers.py   # 對話流程與指令處理
+│   ├── db.py         # Supabase CRUD
+│   ├── balance.py    # 餘額計算、互抵邏輯
+│   └── dashboard.py  # 看板格式化
+└── web/              # Next.js PWA（TypeScript）
+    └── app/
+        ├── group/    # 主頁面（費用列表、結算）
+        └── api/      # REST API → Supabase
+```
+
+---
 
 ## 功能
-- 自然語言記帳（直接傳訊息）
-- 結構化指令記帳
-- 月度支出圓餅圖
-- 筆記摘要儲存
 
-## 快速開始
+### Telegram Bot
+| 操作 | 說明 |
+|------|------|
+| 新增費用 | 點擊看板按鈕 → 對話式輸入付款人、金額、類別、日期、分帳方式 |
+| 結算 | 點擊「結算」→ 一鍵清零目前欠款 |
+| 查帳 | 點擊「明細」→ 查看最近費用記錄 |
+| 看板 | 自動 pin 訊息，顯示雙人餘額與快速操作 |
 
-### 1. 前置需求
+**分帳方式**
+- 平分 — 各付一半
+- 全額代墊 — 另一人欠全額
 
-| 服務 | 取得方式 |
-|------|----------|
-| Telegram Bot Token | 找 [@BotFather](https://t.me/BotFather)，輸入 `/newbot` |
-| Anthropic API Key | https://console.anthropic.com |
-| Supabase 專案 | https://supabase.com → New Project |
-
----
-
-### 2. 建立 Supabase 資料表
-
-1. 進入 Supabase Dashboard → SQL Editor
-2. 貼上並執行 `schema.sql` 內容
+### PWA 網頁
+- 費用列表（分頁，每頁 10 筆）
+- 新增費用（含計算機輸入）
+- 編輯 / 刪除費用
+- 結算記錄
+- iPhone 可加入主畫面作為 App
 
 ---
 
-### 3. 本地開發
+## 環境變數
+
+### Bot（`.env`）
 
 ```bash
-# 安裝依賴
-pip install -r requirements.txt
-
-# 複製並填寫環境變數
-cp .env.example .env
-# 編輯 .env，填入所有 token/key
-# 確認 USE_POLLING=true
-
-# 啟動（polling 模式）
-python -m bot.main
-```
-
----
-
-### 4. Railway 部署
-
-1. 推上 GitHub repo（`git init && git add . && git commit -m "init" && git push`）
-2. 前往 [Railway](https://railway.app) → New Project → Deploy from GitHub
-3. 選此 repo
-4. Settings → Variables，新增以下環境變數：
-
-```
-TELEGRAM_BOT_TOKEN=...
-ANTHROPIC_API_KEY=...
-SUPABASE_URL=...
-SUPABASE_KEY=...
-USE_POLLING=false
+TELEGRAM_BOT_TOKEN=      # BotFather 取得
+SUPABASE_URL=            # Supabase 專案 URL
+SUPABASE_KEY=            # Supabase service_role key
+USE_POLLING=true         # 本地開發用 true，部署用 false
+WEBHOOK_URL=             # 部署後的 domain（polling=false 時必填）
 PORT=8080
 ```
 
-5. 等部署完成後，取得 Railway 提供的 domain，例如 `https://your-app.railway.app`
-6. 再加一個環境變數：`WEBHOOK_URL=https://your-app.railway.app`
-7. Railway 會自動重新部署
+### Web（`web/.env.local`）
+
+```bash
+SUPABASE_URL=                    # 同上
+SUPABASE_SERVICE_ROLE_KEY=       # Supabase service_role key
+SESSION_USER_ID=                 # 登入用的 Telegram user ID
+LOGIN_PIN=                       # PIN 碼（任意設定）
+```
 
 ---
 
-## 使用方式
+## 快速開始
 
-### 自然語言（直接傳）
+### 前置需求
+
+| 服務 | 取得方式 |
+|------|----------|
+| Telegram Bot Token | [@BotFather](https://t.me/BotFather) → `/newbot` |
+| Supabase 專案 | https://supabase.com → New Project |
+
+### Supabase Schema
+
+1. Supabase Dashboard → SQL Editor
+2. 執行 `schema_v2.sql`
+
+### Bot 本地開發
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+# 填入 TELEGRAM_BOT_TOKEN、SUPABASE_URL、SUPABASE_KEY
+# 確認 USE_POLLING=true
+
+python -m bot.main
 ```
-吃飯 280
-早餐麥當勞 120
-薪水入帳 50000
-今天很累，開會三個小時...（長文自動存為筆記）
+
+### Web 本地開發
+
+```bash
+cd web
+npm install
+# 建立 .env.local 並填入上方環境變數
+npm run dev
 ```
 
-### 指令
-| 指令 | 說明 |
-|------|------|
-| `/add 飲食 280 麥當勞` | 新增支出 |
-| `/income 薪資 50000` | 新增收入 |
-| `/report` | 本月圓餅圖 |
-| `/report 2026-04` | 指定月份 |
-| `/list` | 最近10筆 |
-| `/list 5` | 最近5筆 |
-| `/note 今天...` | 強制存筆記 |
-| `/help` | 說明 |
+---
 
-## 支出類別
-飲食 / 交通 / 娛樂 / 購物 / 醫療 / 居住 / 其他
-# telegram_account_bot
+## 部署
+
+### Bot → Fly.io
+
+```bash
+fly deploy
+```
+
+Fly.io secrets 需設定：`TELEGRAM_BOT_TOKEN`、`SUPABASE_URL`、`SUPABASE_KEY`、`USE_POLLING=false`、`WEBHOOK_URL`
+
+### Web → Vercel
+
+GitHub repo 連接 Vercel，Root Directory 設為 `web`。
+
+Vercel Environment Variables 需設定：`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、`SESSION_USER_ID`、`LOGIN_PIN`
