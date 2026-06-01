@@ -1344,3 +1344,45 @@ td {
   margin-top: 2px;
   padding-bottom: 2px;
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 0 4px;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pagination-btn:not(:disabled):hover {
+  background: rgba(255, 184, 77, 0.2);
+}
+
+.pagination-btn-active {
+  background: linear-gradient(135deg, #ffb84d, #ff8c42);
+  color: #fff;
+  border-color: transparent;
+}
+
+.pagination-btn-active:hover {
+  background: linear-gradient(135deg, #ffb84d, #ff8c42) !important;
+}

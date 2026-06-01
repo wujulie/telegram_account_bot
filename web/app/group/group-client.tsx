@@ -127,6 +127,9 @@ export function GroupClient() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<GroupExpense | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+
+  const PAGE_SIZE = 10;
 
   const balance = balances[0];
   const total = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -143,6 +146,7 @@ export function GroupClient() {
       setExpenses(nextExpenses);
       setMembers(nextMembers);
       setBalances(nextBalances);
+      setPage(1);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "載入失敗");
     } finally {
@@ -407,7 +411,7 @@ export function GroupClient() {
             <span className="pill">{loading ? "Loading..." : "最新優先"}</span>
           </div>
           <div className="transaction-list">
-            {expenses.map((expense) => (
+            {expenses.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((expense) => (
               <article className="transaction-row" key={expense.id}>
                 <span className={`category-badge ${categoryClass(expense.category)}`}>
                   <CategoryIcon category={expense.category} />
@@ -449,6 +453,36 @@ export function GroupClient() {
             ))}
             {!loading && expenses.length === 0 ? <p className="empty-state">沒有共同費用。</p> : null}
           </div>
+          {expenses.length > PAGE_SIZE && (
+            <div className="pagination">
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                ‹ 上一頁
+              </button>
+              {Array.from({ length: Math.ceil(expenses.length / PAGE_SIZE) }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`pagination-btn ${p === page ? "pagination-btn-active" : ""}`}
+                  onClick={() => setPage(p)}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={page === Math.ceil(expenses.length / PAGE_SIZE)}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                下一頁 ›
+              </button>
+            </div>
+          )}
         </section>
       </main>
 
