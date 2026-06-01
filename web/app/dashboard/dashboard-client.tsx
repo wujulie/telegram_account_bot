@@ -149,7 +149,7 @@ export function DashboardClient() {
 
   return (
     <div className="app-shell">
-      <AppNav active="personal" />
+      <AppNav />
       <main className="page-content">
         <section className="hero-band">
           <div>

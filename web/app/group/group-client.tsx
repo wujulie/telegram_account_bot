@@ -136,7 +136,7 @@ export function GroupClient() {
 
   return (
     <div className="app-shell">
-      <AppNav active="group" />
+      <AppNav />
       <main className="page-content">
         <section className="hero-band">
           <div>

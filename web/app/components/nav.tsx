@@ -1,31 +1,20 @@
 import Link from "next/link";
-import { ChartIcon, LogOutIcon, UsersIcon, WalletIcon } from "./icons";
+import { LogOutIcon, UsersIcon, WalletIcon } from "./icons";
 
-type NavProps = {
-  active: "personal" | "group";
-};
-
-export function AppNav({ active }: NavProps) {
-  const linkClass = (key: NavProps["active"]) =>
-    `nav-link ${active === key ? "nav-link-active" : ""}`;
-
+export function AppNav() {
   return (
     <>
       <header className="top-nav">
-        <Link className="brand" href="/dashboard">
+        <Link className="brand" href="/group">
           <span className="brand-mark">
             <WalletIcon className="size-5" />
           </span>
           <span>Fox Pudding</span>
         </Link>
         <nav className="desktop-nav" aria-label="主要導覽">
-          <Link className={linkClass("personal")} href="/dashboard">
-            <ChartIcon className="size-4" />
-            Personal
-          </Link>
-          <Link className={linkClass("group")} href="/group">
+          <Link className="nav-link nav-link-active" href="/group">
             <UsersIcon className="size-4" />
-            Group
+            共同帳本
           </Link>
           <form action="/api/auth/logout" method="post">
             <button className="icon-button" type="submit" aria-label="登出" title="登出">
@@ -34,16 +23,6 @@ export function AppNav({ active }: NavProps) {
           </form>
         </nav>
       </header>
-      <nav className="bottom-nav" aria-label="手機導覽">
-        <Link className={linkClass("personal")} href="/dashboard">
-          <ChartIcon className="size-5" />
-          Personal
-        </Link>
-        <Link className={linkClass("group")} href="/group">
-          <UsersIcon className="size-5" />
-          Group
-        </Link>
-      </nav>
     </>
   );
 }
